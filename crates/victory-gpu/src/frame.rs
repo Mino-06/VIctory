@@ -138,7 +138,7 @@ pub(crate) extern "system" fn wait(
     static SLEEP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let late_waits =
         *SLEEP.get_or_init(|| std::env::var_os("VICTORY_LATE_WAITS").is_some_and(|v| v == "1"));
-    let (hr, tick) = loop {
+    let (hr, _tick) = loop {
         let (mut tick, mut wait) = next_tick(kind);
         let remaining = deadline
             .map(|d| d.saturating_duration_since(Instant::now()))
@@ -188,12 +188,11 @@ pub(crate) extern "system" fn wait(
         timeout_ms,
         flags,
         hr,
-        tick,
+        tick = _tick,
         wait_us = waited.as_micros() as u64,
         frame = current(),
         "frame wait"
     );
-    let _ = tick;
     hr
 }
 
@@ -298,18 +297,25 @@ mod tests {
     fn concurrent_flip_retry_does_not_extend_timeout() {
         let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         const FLIP: u32 = 2;
-        let null = std::ptr::null();
-        // 60 ms interval, 85 ms timeout: one tick fits, a second tick (120 ms) does not.
-        assert_eq!(set_interval(null, null, 60_000, 1, 0), S_OK);
+        // 200 ms interval, 285 ms timeout: one tick fits with wide scheduling
+        // margin, while a second tick (400 ms) does not. Start the interval
+        // after both threads are spawned and aligned at the first barrier so
+        // thread-spawn delay cannot consume the first tick window.
         let before = LAST[2].load(Ordering::Relaxed);
         let barrier = Arc::new(Barrier::new(2));
         let handles: Vec<_> = (0..2)
             .map(|_| {
                 let b = barrier.clone();
                 std::thread::spawn(move || {
+                    if b.wait().is_leader() {
+                        assert_eq!(
+                            set_interval(std::ptr::null(), std::ptr::null(), 200_000, 1, 0),
+                            S_OK
+                        );
+                    }
                     b.wait();
                     let mut token = 0;
-                    wait(std::ptr::null(), FLIP, 85, std::ptr::null(), 0, &mut token)
+                    wait(std::ptr::null(), FLIP, 285, std::ptr::null(), 0, &mut token)
                 })
             })
             .collect();
@@ -317,7 +323,7 @@ mod tests {
         assert_eq!(
             results.iter().filter(|&&r| r == S_OK).count(),
             1,
-            "exactly one waiter should claim the single tick within 85 ms: {results:?}"
+            "exactly one waiter should claim the single tick within 285 ms: {results:?}"
         );
         assert_eq!(
             results.iter().filter(|&&r| r == TIMEOUT).count(),
