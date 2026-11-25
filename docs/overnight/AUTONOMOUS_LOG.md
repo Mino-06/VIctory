@@ -318,3 +318,9 @@ cached, #1845 dword 1/5 and masks, #1890 `split.rs` behind
   commits 731a2e1 and e09d138: purge them from history before any push.
 - Full suite (LATE_WAIT opt-in): 714 passed + policy test passing after the
   PNGs left = 715 passed, 0 failed.
+
+## Pass 14: late waits by default
+
+- `VICTORY_LATE_WAIT` defaults to 1 (unset means on; `0` turns it off). Prologue A/B: 2.84 fps on, 2.23 fps off.
+- `buffer_data_reaches_the_host_texture` failed under late waits only in the full suite. It asserted a refcount that a settle on another test's thread may already have dropped once the card ran the list. That assertion now runs only without late waits. Suite: 715 passed, 0 failed.
+- chain7 measures `VICTORY_WIDE_MERGE=1`, `VICTORY_JOIN_COPIES=1` and `VICTORY_RELAY=2` against references. `ref7` (2.13 fps) ran while the test suite was building, so it is not a clean reference; `ref7b` closes the chain.
