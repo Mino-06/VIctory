@@ -2446,6 +2446,9 @@ impl<'a> Lower<'a> {
         for &(_, w) in &inst.writes {
             let val = if self.section_out.contains(&w) {
                 let shape = self.sections[&b][&start].shapes.get(&w).copied();
+                if shape.is_none() && std::env::var_os("VICTORY_SECTION_DUMP").is_some() {
+                    self.dump_section(b, start, i, w);
+                }
                 let own = self.own_bits.totals.contains(&w);
                 match shape.ok_or(UNKNOWN).and_then(|sh| self.shape(sh, own)) {
                     Ok(x) => Val::I32(x),
@@ -2456,6 +2459,30 @@ impl<'a> Lower<'a> {
             };
             self.vals.insert(w, val);
         }
+    }
+
+    /// `VICTORY_SECTION_DUMP=1`: the section around value `w` (written at `i`) that it
+    /// leaves without a shape, and what reads `w` after it.
+    fn dump_section(&self, b: usize, start: usize, i: usize, w: Value) {
+        let p = self.x.p;
+        let end = self.sections[&b][&start].end;
+        let mut text = format!("SECTION b{b} {start}..{end} value {w:?} at {i}\n");
+        for k in start..=end {
+            let mark = if k == i { ">>" } else { "  " };
+            let m = &p.blocks[b].insts[k].machine;
+            text += &format!("{mark} {k:4} {}\n", m.text(p.wave64));
+        }
+        for (rb, block) in p.blocks.iter().enumerate() {
+            if block.phis.iter().any(|ph| ph.args.contains(&w)) {
+                text += &format!("   read by a phi of b{rb}\n");
+            }
+            for (k, inst) in block.insts.iter().enumerate() {
+                if inst.reads.iter().any(|r| r.1 == w) && !(rb == b && k <= end) {
+                    text += &format!("   read by b{rb} {k} {}\n", inst.machine.text(p.wave64));
+                }
+            }
+        }
+        eprint!("{text}");
     }
 
     /// A value a whole-wave section leaves, as DXIL wave operations over the
@@ -8822,8 +8849,9 @@ impl<'a> Lower<'a> {
             "v_permlane16_b32" | "v_permlanex16_b32" => {
                 // RDNA2 ISA 12.12: each nibble of {src2, src1} selects a lane
                 // in this row of 16, or the other row of the same 32-lane half.
-                // OP_SEL[0:1] are fetch-inactive and bound-control, not half selects.
-                if v.abs != 0 || v.neg != 0 || v.opsel & !3 != 0 {
+                // OP_SEL[0:1] are fetch-inactive and bound-control, not half selects;
+                // OP_SEL[3] (the destination half) means nothing for a 32-bit result.
+                if v.abs != 0 || v.neg != 0 || v.opsel & !super::wave::PERMLANE_OPSEL != 0 {
                     return Err("permlane input modifiers");
                 }
                 self.cross_lane(false)?;
@@ -13605,7 +13633,7 @@ mod tests {
             0xBF84_0005, // s_cbranch_scc0 -> s_endpgm
         ];
         let untracked = emit(&[&untracked[..], &body].concat());
-        let controls = [1 << 11, 1 << 12, 1 << 13, 1 << 15].map(|control| {
+        let controls = [1 << 11, 1 << 12, 1 << 13, 1 << 15, 1 << 14 | 1 << 11].map(|control| {
             let mut words = body;
             words[0] |= control;
             emit(&words)
@@ -13617,8 +13645,10 @@ mod tests {
         // Lanes off in the opposite row, and fetch-inactive / bound-control,
         // take the general row permutation, which models inactive sources
         // (`permlane_rows_and_inactive_sources` checks it on the card).
-        let [fetch_inactive, bound_control, op_sel2, clamp] = controls;
-        for result in [masked, untracked, fetch_inactive, bound_control] {
+        // OP_SEL[3], the destination half, is ignored by a 32-bit result (the console
+        // compiler sets it with fetch-inactive on its prefix sums' carries).
+        let [fetch_inactive, bound_control, op_sel2, clamp, dst_half] = controls;
+        for result in [masked, untracked, fetch_inactive, bound_control, dst_half] {
             assert_eq!(result.expect("translates").wave_size, Some(32));
         }
         assert!(matches!(

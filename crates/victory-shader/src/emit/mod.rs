@@ -593,7 +593,7 @@ pub fn emit(
         }
         other => other,
     };
-    let original = original.map(|(shader, _)| shader);
+    let original = original.and_then(host_wave);
     // Retry unsupported programs only. Threading can separate an unknown
     // register value from its apparent use on a mutually exclusive path.
     if !matches!(original, Err(ShaderError::Unsupported { .. })) {
@@ -607,7 +607,23 @@ pub fn emit(
     let st = structure::structure(&p)?;
     let io = io::raise(&p, native)?;
     let res = resource::track(&p, &native.layout, native.stage, Some(&st))?;
-    emit_program(c, native, &p, &st, &io, &res).map(|(shader, _)| shader)
+    emit_program(c, native, &p, &st, &io, &res).and_then(host_wave)
+}
+
+/// Why a console wave64 program does not translate for a host of 32-lane waves when no
+/// 32-lane form of it is exact (`VICTORY_WAVE_WHY=1` names what keeps it at 64 lanes).
+pub const WAVE64_ON_WAVE32: &str = "a program that keeps 64-lane waves on a host of 32-lane waves";
+
+/// An emitted program, unless it declares 64-lane waves for a host of 32-lane waves, which
+/// refuses its pipeline (`CreateComputePipelineState`, E_INVALIDARG): it does not translate.
+fn host_wave((shader, wave): (HostShader, Option<u32>)) -> Result<HostShader, ShaderError> {
+    if wave == Some(64) && host_uses_wave32() {
+        return Err(ShaderError::Unsupported {
+            offset: 0,
+            what: WAVE64_ON_WAVE32,
+        });
+    }
+    Ok(shader)
 }
 
 /// `p` (a console wave64 compute program on a host of 32-lane waves) with the per-lane

@@ -587,14 +587,19 @@ fn simulate(insts: &[Inst], wave: u32, saved: Value) -> HashMap<Value, Shape> {
                     })
                     .collect()
             }
-            ("v_permlanex16_b32", Some(a))
-                if exec == all
-                    && v.opsel == 0
+            ("v_permlanex16_b32" | "v_permlane16_b32", Some(a))
+                if v.opsel & !PERMLANE_OPSEL == 0
                     && v.dpp.is_none()
                     && matches!(v.src.first(), Some(Operand::Vector { .. })) =>
             {
-                // Lanes of each row read the other row of their half; lane
-                // i's pick is nibble i of {src2, src1}.
+                // Lanes of each row read a lane of their row (`v_permlane16`) or of the
+                // other row of their half (`v_permlanex16`); lane i's pick is nibble i of
+                // {src2, src1}. RDNA2 ISA 12.12: OP_SEL[0] (FI) fetches a source lane EXEC
+                // leaves out as it is; without it such a source gives 0 (OP_SEL[1],
+                // bound control) or leaves the destination as it was. OP_SEL[3], the half
+                // of a 16-bit result, means nothing for this 32-bit one.
+                let (fetch_inactive, bound) = (v.opsel & 1 != 0, v.opsel & 2 != 0);
+                let cross = name == "v_permlanex16_b32";
                 let sel = |k: usize| match v.src.get(k) {
                     Some(&Operand::Const(c)) => crate::resource::inline(c),
                     Some(&Operand::Literal(x)) => Some(x),
@@ -605,9 +610,20 @@ fn simulate(insts: &[Inst], wave: u32, saved: Value) -> HashMap<Value, Shape> {
                         let s = u64::from(s1) | u64::from(s2) << 32;
                         (0..wave)
                             .map(|l| {
-                                let other = (l & !31) | ((l & 16) ^ 16);
+                                let row = if cross {
+                                    (l & !31) | ((l & 16) ^ 16)
+                                } else {
+                                    l & !15
+                                };
                                 let pick = (s >> (4 * (l & 15)) & 15) as u32;
-                                a[(other | pick) as usize]
+                                let from = row | pick;
+                                if fetch_inactive || exec >> from & 1 != 0 {
+                                    a[from as usize]
+                                } else if bound {
+                                    Sym::K(0)
+                                } else {
+                                    old[l as usize]
+                                }
                             })
                             .collect()
                     }
@@ -673,6 +689,11 @@ fn simulate(insts: &[Inst], wave: u32, saved: Value) -> HashMap<Value, Shape> {
     }
     shapes(vec, uni, wave)
 }
+
+/// The OP_SEL bits a permlane may carry: fetch-inactive, bound control and the
+/// destination half, which a 32-bit result ignores (the console compiler sets it on the
+/// carries of its prefix sums, which it adds as 32-bit values).
+pub(crate) const PERMLANE_OPSEL: u8 = 0b1011;
 
 fn constant(inst: &Inst) -> Option<u64> {
     let Fields::Sop { src, .. } = &inst.fields else {
@@ -937,22 +958,91 @@ mod tests {
         assert_eq!(dpp_lane(swap, 8), Some((9, false, true)));
     }
 
+    /// RDNA2 ISA 12.12: a permlane source lane EXEC leaves out gives the old destination,
+    /// 0 with bound control (OP_SEL[1]), or its value with fetch-inactive (OP_SEL[0]).
     #[test]
-    fn opposite_row_permute_with_inactive_sources_is_not_simulated() {
-        let w = [
-            0xBE84_25C1, // s_or_saveexec_b64 s[4:5], -1
-            vop1(1, 0x01, 135), // v_mov_b32 v1, 7
-            vop1(2, 0x01, 128), // v_mov_b32 v2, 0
-            sop1(EXEC, 0x04, 129), // s_mov_b64 exec, 1
-            0xD778_0002,
-            0x0201_0101, // v_permlanex16_b32 v2, v1, 0, 0
-            0xD760_0007,
-            0x0001_0102, // v_readlane_b32 s7, v2, 0
-            sop1(EXEC, 0x04, 4), // s_mov_b64 exec, s[4:5]
-        ];
-        let p = build(&w, true);
-        let total = p.blocks[0].insts[5].write(Reg::S(7)).unwrap();
-        assert_eq!(sections(&p, 0)[&0].shapes.get(&total), None);
+    fn opposite_row_permute_reads_inactive_sources_as_the_isa_says() {
+        let lane0 = |opsel: u32| {
+            let w = [
+                0xBE84_25C1,           // s_or_saveexec_b64 s[4:5], -1
+                vop1(1, 0x01, 135),    // v_mov_b32 v1, 7
+                vop1(2, 0x01, 133),    // v_mov_b32 v2, 5
+                sop1(EXEC, 0x04, 129), // s_mov_b64 exec, 1
+                0xD778_0002 | opsel << 11,
+                0x0201_0101, // v_permlanex16_b32 v2, v1, 0, 0 (lane 0 reads lane 16)
+                0xD760_0007,
+                0x0001_0102,         // v_readlane_b32 s7, v2, 0
+                sop1(EXEC, 0x04, 4), // s_mov_b64 exec, s[4:5]
+            ];
+            let p = build(&w, true);
+            let total = p.blocks[0].insts[5].write(Reg::S(7)).unwrap();
+            sections(&p, 0)[&0].shapes.get(&total).copied()
+        };
+        assert_eq!(lane0(0), Some(Shape::K(5)));
+        assert_eq!(lane0(2), Some(Shape::K(0)));
+        assert_eq!(lane0(1), Some(Shape::K(7)));
+    }
+
+    /// `WavePrefixSum` of a wave64 compute program, as compiled in
+    /// `tiled_lighting:CS_MaterialTilesInitial`: a scan of each row, the rows' totals
+    /// carried with `v_permlanex16 ... fi:1` under an EXEC of the upper rows, the lower
+    /// half's total with `v_readlane`, then the lane's own term taken off.
+    #[test]
+    fn a_prefix_sum_carried_across_rows_with_fetch_inactive_is_followed() {
+        let mut w = vec![sop1(0, 0x25, 193)]; // s_or_saveexec_b64 s[0:1], -1
+        w.extend(vop3(2, 0x101, 128, 256 + 6, 0)); // v_cndmask_b32 v2, 0, v6, s[0:1]
+        w.push(vop1(3, 0x01, 258)); // v_mov_b32 v3, v2
+        for (shift, bound) in [(1u16, true), (2, false), (4, false), (8, false)] {
+            // v_add_nc_u32 v3, v3, v3 row_shr:shift
+            w.push(vop2(3, 0x25, 0xFA, 3));
+            w.push(dpp16(3, 0x110 + shift, 0xF, 0xF, bound));
+        }
+        w.extend([sop1(EXEC, 0x03, 255), 0xFFFF_0000]); // s_mov_b32 exec_lo, 0xffff0000
+        w.extend([sop1(EXEC + 1, 0x03, 255), 0xFFFF_0000]); // s_mov_b32 exec_hi, 0xffff0000
+        // v_permlanex16_b32 v4, v3, -1, -1 fi:1, with OP_SEL[3] set as the compiler sets it
+        w.extend([0xD778_4804, 0x103 | 193 << 9 | 193 << 18]);
+        w.push(vop2(3, 0x25, 260, 3)); // v_add_nc_u32 v3, v4, v3
+        w.extend(vop3(3, 0x360, 259, 128 + 31, 0)); // v_readlane_b32 s3, v3, 31
+        w.push(sop1(EXEC, 0x03, 128)); // s_mov_b32 exec_lo, 0
+        w.push(sop1(EXEC + 1, 0x03, 193)); // s_mov_b32 exec_hi, -1
+        w.push(vop2(3, 0x25, 3, 3)); // v_add_nc_u32 v3, s3, v3
+        w.push(sop1(EXEC, 0x03, 193)); // s_mov_b32 exec_lo, -1
+        w.push(sop1(EXEC + 1, 0x03, 193)); // s_mov_b32 exec_hi, -1
+        w.push(vop2(3, 0x26, 259, 2)); // v_sub_nc_u32 v3, v3, v2
+        w.push(sop1(EXEC, 0x04, 0)); // s_mov_b64 exec, s[0:1]
+        let check = |w: &[u32], wave64: bool| {
+            let p = build(w, wave64);
+            let insts = &p.blocks[0].insts;
+            let saved = insts[0].write(Reg::S(0)).unwrap();
+            let v6 = p
+                .inputs
+                .iter()
+                .find_map(|&(r, v)| (r == Reg::V(6)).then_some(v))
+                .unwrap();
+            let prefix = insts[insts.len() - 3].write(Reg::V(3)).unwrap();
+            assert_eq!(
+                sections(&p, 0)[&0].shapes.get(&prefix),
+                Some(&Shape::Prefix(Op::AddU, v6, saved, 0, false)),
+                "wave64 {wave64}"
+            );
+        };
+        check(&w, true);
+        // The same in a wave32 program (`shader_binning_utils:CS_GenerateShaderBinOffsets`):
+        // the upper row's carry alone.
+        let mut w = vec![sop1(0, 0x3D, 193)]; // s_or_saveexec_b32 s0, -1
+        w.extend(vop3(2, 0x101, 128, 256 + 6, 0)); // v_cndmask_b32 v2, 0, v6, s0
+        w.push(vop1(3, 0x01, 258)); // v_mov_b32 v3, v2
+        for (shift, bound) in [(1u16, true), (2, false), (4, false), (8, false)] {
+            w.push(vop2(3, 0x25, 0xFA, 3));
+            w.push(dpp16(3, 0x110 + shift, 0xF, 0xF, bound));
+        }
+        w.extend([sop1(EXEC, 0x03, 255), 0xFFFF_0000]); // s_mov_b32 exec_lo, 0xffff0000
+        w.extend([0xD778_4804, 0x103 | 193 << 9 | 193 << 18]); // v_permlanex16_b32 v4, v3, -1, -1 fi:1
+        w.push(vop2(3, 0x25, 260, 3)); // v_add_nc_u32 v3, v4, v3
+        w.push(sop1(EXEC, 0x03, 193)); // s_mov_b32 exec_lo, -1
+        w.push(vop2(3, 0x26, 259, 2)); // v_sub_nc_u32 v3, v3, v2
+        w.push(sop1(EXEC, 0x03, 0)); // s_mov_b32 exec_lo, s0
+        check(&w, false);
     }
 
     #[test]
