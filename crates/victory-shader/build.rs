@@ -17,7 +17,8 @@ fn main() {
     let msvc = std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
     if msvc && core.exists() {
         println!("cargo::rerun-if-changed={}", core.display());
-        // Every executable this crate links is a test executable.
+        // Every executable this crate links is a test executable or an example
+        // that runs shaders on the host (each has `mod agility`).
         println!("cargo::rustc-link-arg=/EXPORT:D3D12SDKVersion,DATA");
         println!("cargo::rustc-link-arg=/EXPORT:D3D12SDKPath,DATA");
     } else {

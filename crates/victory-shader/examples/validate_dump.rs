@@ -2,6 +2,11 @@
 //! D3D12 runtime would refuse, with the validator's message.
 //! `cargo run --example validate_dump -- <dir with .dxil files> [dxil.dll path]`
 
+// The Agility SDK exports `build.rs` links into this crate's executables.
+#[cfg(windows)]
+#[path = "../src/agility.rs"]
+mod agility;
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(dir) = args.next() else {

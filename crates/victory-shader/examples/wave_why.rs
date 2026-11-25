@@ -3,6 +3,11 @@
 //! keeps 64-lane waves.
 //! `cargo run --example wave_why -- <dir with .cdxil files> [hashes...]`
 
+// The Agility SDK exports `build.rs` links into this crate's executables.
+#[cfg(windows)]
+#[path = "../src/agility.rs"]
+mod agility;
+
 fn psv_wave(d: &[u8]) -> Option<(u32, u32)> {
     let n = u32_le(d.get(28..32)?) as usize;
     eprintln!("parts: {n}");

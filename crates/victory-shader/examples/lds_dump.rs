@@ -3,6 +3,11 @@
 //! own dwords (the address derives from the lane number).
 //! `cargo run --example lds_dump -- <file.cdxil>`
 
+// The Agility SDK exports `build.rs` links into this crate's executables.
+#[cfg(windows)]
+#[path = "../src/agility.rs"]
+mod agility;
+
 fn main() {
     let path = std::env::args().nth(1).expect("usage: lds_dump <file.cdxil>");
     let bytes = std::fs::read(&path).expect("read");
