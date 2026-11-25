@@ -5,6 +5,7 @@
 
 mod agility;
 mod census;
+mod doctor;
 mod inspect;
 mod run;
 mod shader;
@@ -108,6 +109,8 @@ enum Command {
     },
     /// Show the resolved configuration and check it.
     Config,
+    /// Report whether this machine can run the title's world.
+    Doctor,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -169,6 +172,7 @@ fn main() -> Result<()> {
             title_args: _,
         } => run::run(&exe, unimplemented, strict, execute, console),
         Command::Config => show_config(),
+        Command::Doctor => doctor::run(),
     }
 }
 
