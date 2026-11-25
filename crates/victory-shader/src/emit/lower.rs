@@ -1121,7 +1121,37 @@ fn lds_lane_private(p: &crate::ir::Program) -> bool {
     true
 }
 
+/// `VICTORY_WAVE_LDS_SYNC=1`: where [`lds_meetings`] refuses a program (an LDS read and
+/// write in one lane-branch region), split it all the same, upstream #1890's `lds_sync`
+/// way: the host waves meet only in blocks the whole group runs together (all-lane blocks
+/// that [`super::split::convergent`] also finds convergent) and around the regions;
+/// inside a region a half may read what the other half writes there early. Off by default.
+fn lds_sync_on() -> bool {
+    #[cfg(test)]
+    if let Some(on) = TEST_LDS_SYNC.get() {
+        return on;
+    }
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VICTORY_WAVE_LDS_SYNC").is_some_and(|v| v == "1"))
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static TEST_LDS_SYNC: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
 fn lds_meetings(p: &crate::ir::Program, st: &Structured, all: &[bool]) -> Option<Vec<(bool, bool)>> {
+    lds_meetings_with(p, st, all, false)
+}
+
+/// [`lds_meetings`]; with `mixed`, a region that both reads and writes LDS is no refusal
+/// (the [`lds_sync_on`] fallback).
+fn lds_meetings_with(
+    p: &crate::ir::Program,
+    st: &Structured,
+    all: &[bool],
+    mixed: bool,
+) -> Option<Vec<(bool, bool)>> {
     let n = st.exits.len();
     let succ = |b: usize| -> Vec<usize> {
         match st.exits[b] {
@@ -1167,7 +1197,7 @@ fn lds_meetings(p: &crate::ir::Program, st: &Structured, all: &[bool]) -> Option
             }
         }
     }
-    if (0..n).any(|r| reads[r] && writes[r]) {
+    if !mixed && (0..n).any(|r| reads[r] && writes[r]) {
         if std::env::var_os("VICTORY_WAVE_DUMP").is_some() {
             for r in 0..n {
                 if reads[r] && writes[r] {
@@ -1199,6 +1229,16 @@ fn lds_meetings(p: &crate::ir::Program, st: &Structured, all: &[bool]) -> Option
         }
     }
     Some(meet)
+}
+
+/// A lane mask operand that is a constant: inline 0 or NULL (no lane), inline -1 (every
+/// lane). Selects and carries read it as such (upstream #1845).
+fn const_mask(op: Option<&Operand>) -> Option<Bool> {
+    match op? {
+        Operand::Scalar { code: NULL, .. } | Operand::Const(128) => Some(Bool::FALSE),
+        Operand::Const(193) => Some(Bool::TRUE),
+        _ => None,
+    }
 }
 
 /// Masks held as numbers or constant lane sets in guards or lane branches: the lane tests its
@@ -1449,6 +1489,259 @@ fn packed_layout(elements: &[SigElement], packs: &[(u8, Option<u8>)]) -> PackedL
     layout.into_iter().map(|(a, _, of)| (a, of)).collect()
 }
 
+/// Whether every non-descriptor data read of `root` (following simple copies
+/// and phis) discards bits `[15:0]` — e.g. extracting buffer descriptor dword
+/// 1's `stride` field (`bits [29:16]`) without ever reading `base_address_hi`
+/// (`bits [15:0]`). Returns `false` if `root` has no data reads or if any read
+/// can observe bits `[15:0]`.
+fn only_high_bits_read(p: &Program, root: Value) -> bool {
+    let op_reads = |inst: &Inst, op: &Operand, val: Value| -> bool {
+        match *op {
+            Operand::Scalar { code, dwords } if code != NULL => {
+                (0..dwords).any(|k| inst.read(Reg::S(code + k)) == Some(val))
+            }
+            Operand::Vector { reg, dwords } => {
+                (0..dwords).any(|k| inst.read(Reg::V(reg + k)) == Some(val))
+            }
+            _ => false,
+        }
+    };
+    let const_u32 = |op: &Operand| -> Option<u32> {
+        match *op {
+            Operand::Literal(x) => Some(x),
+            Operand::Const(k) => crate::resource::inline(k),
+            _ => None,
+        }
+    };
+    let matching_half = |inst: &Inst, src: &Operand, dst: &Operand, val: Value| -> Option<Value> {
+        let (Operand::Scalar { code: sc, dwords: sd }, Operand::Scalar { code: dc, dwords: dd }) =
+            (*src, *dst)
+        else {
+            return None;
+        };
+        let n = sd.min(dd);
+        (0..n)
+            .find(|&k| inst.read(Reg::S(sc + k)) == Some(val))
+            .and_then(|k| inst.write(Reg::S(dc + k)))
+    };
+
+    let mut stack = vec![root];
+    let mut visited = HashSet::new();
+    let mut saw_data_use = false;
+
+    while let Some(val) = stack.pop() {
+        if !visited.insert(val) {
+            continue;
+        }
+        for block in &p.blocks {
+            for phi in &block.phis {
+                if phi.args.contains(&val) {
+                    stack.push(phi.value);
+                }
+            }
+            for inst in &block.insts {
+                if !inst.reads.iter().any(|&(_, r)| r == val) {
+                    continue;
+                }
+                let name = inst.name();
+                match &inst.fields {
+                    Fields::Buffer {
+                        rsrc,
+                        data,
+                        addr,
+                        soffset,
+                        ..
+                    } => {
+                        let non_desc = data.as_ref().is_some_and(|o| op_reads(inst, o, val))
+                            || op_reads(inst, addr, val)
+                            || op_reads(inst, soffset, val);
+                        if !non_desc && op_reads(inst, rsrc, val) {
+                            continue;
+                        }
+                        return false;
+                    }
+                    Fields::Image {
+                        rsrc,
+                        sampler,
+                        data,
+                        addr,
+                        ..
+                    } => {
+                        let non_desc = op_reads(inst, data, val)
+                            || addr.iter().any(|o| op_reads(inst, o, val));
+                        let desc = op_reads(inst, rsrc, val)
+                            || sampler.as_ref().is_some_and(|o| op_reads(inst, o, val));
+                        if !non_desc && desc {
+                            continue;
+                        }
+                        return false;
+                    }
+                    Fields::Smem {
+                        base,
+                        data,
+                        soffset,
+                        ..
+                    } if name.starts_with("s_buffer_load_") => {
+                        let non_desc = data.as_ref().is_some_and(|o| op_reads(inst, o, val))
+                            || op_reads(inst, soffset, val);
+                        if !non_desc && op_reads(inst, base, val) {
+                            continue;
+                        }
+                        return false;
+                    }
+                    Fields::Sop { dst, src, .. } => match name {
+                        "s_mov_b32" if src.len() == 1 => {
+                            let Some(Operand::Scalar { code, .. }) = *dst else {
+                                return false;
+                            };
+                            let Some(w) = inst.write(Reg::S(code)) else {
+                                return false;
+                            };
+                            stack.push(w);
+                        }
+                        "s_mov_b64" if src.len() == 1 => {
+                            let Some(d) = dst.as_ref() else {
+                                return false;
+                            };
+                            let Some(w) = matching_half(inst, &src[0], d, val) else {
+                                return false;
+                            };
+                            stack.push(w);
+                        }
+                        "s_cselect_b32" if src.len() == 2 => {
+                            let Some(Operand::Scalar { code, .. }) = *dst else {
+                                return false;
+                            };
+                            let Some(w) = inst.write(Reg::S(code)) else {
+                                return false;
+                            };
+                            stack.push(w);
+                        }
+                        "s_cselect_b64" if src.len() == 2 => {
+                            let Some(d) = dst.as_ref() else {
+                                return false;
+                            };
+                            let mut pushed = false;
+                            for s in src {
+                                if let Some(w) = matching_half(inst, s, d, val) {
+                                    stack.push(w);
+                                    pushed = true;
+                                }
+                            }
+                            if !pushed {
+                                return false;
+                            }
+                        }
+                        "s_bfe_u32" | "s_bfe_i32" | "s_lshr_b32" | "s_ashr_i32"
+                        | "s_bitcmp0_b32" | "s_bitcmp1_b32"
+                            if src.len() == 2
+                                && op_reads(inst, &src[0], val)
+                                && !op_reads(inst, &src[1], val)
+                                && const_u32(&src[1]).is_some_and(|k| (k & 0x1F) >= 16) =>
+                        {
+                            saw_data_use = true;
+                        }
+                        "s_and_b32" if src.len() == 2 => {
+                            let other = if op_reads(inst, &src[0], val)
+                                && !op_reads(inst, &src[1], val)
+                            {
+                                &src[1]
+                            } else if op_reads(inst, &src[1], val)
+                                && !op_reads(inst, &src[0], val)
+                            {
+                                &src[0]
+                            } else {
+                                return false;
+                            };
+                            if const_u32(other).is_some_and(|mask| mask & 0xFFFF == 0) {
+                                saw_data_use = true;
+                            } else {
+                                return false;
+                            }
+                        }
+                        _ => return false,
+                    },
+                    Fields::Valu(v)
+                        if v.abs == 0
+                            && v.neg == 0
+                            && v.neg_hi == 0
+                            && v.opsel == 0
+                            && v.opsel_hi == 0
+                            && !v.clamp
+                            && v.omod == 0
+                            && v.sdwa.is_none()
+                            && v.dpp.is_none() =>
+                    {
+                        match name {
+                            "v_mov_b32" | "v_readfirstlane_b32" if v.src.len() == 1 => {
+                                let w = match v.dst {
+                                    Some(Operand::Vector { reg, .. }) => inst.write(Reg::V(reg)),
+                                    Some(Operand::Scalar { code, .. }) => inst.write(Reg::S(code)),
+                                    _ => None,
+                                };
+                                let Some(w) = w else {
+                                    return false;
+                                };
+                                stack.push(w);
+                            }
+                            "v_cndmask_b32"
+                                if v.src.len() >= 3 && !op_reads(inst, &v.src[2], val) =>
+                            {
+                                let Some(Operand::Vector { reg, .. }) = v.dst else {
+                                    return false;
+                                };
+                                let Some(w) = inst.write(Reg::V(reg)) else {
+                                    return false;
+                                };
+                                stack.push(w);
+                            }
+                            "v_bfe_u32" | "v_bfe_i32"
+                                if v.src.len() == 3
+                                    && op_reads(inst, &v.src[0], val)
+                                    && !op_reads(inst, &v.src[1], val)
+                                    && !op_reads(inst, &v.src[2], val)
+                                    && const_u32(&v.src[1]).is_some_and(|k| (k & 0x1F) >= 16) =>
+                            {
+                                saw_data_use = true;
+                            }
+                            "v_lshrrev_b32" | "v_ashrrev_i32"
+                                if v.src.len() == 2
+                                    && !op_reads(inst, &v.src[0], val)
+                                    && op_reads(inst, &v.src[1], val)
+                                    && const_u32(&v.src[0]).is_some_and(|k| (k & 0x1F) >= 16) =>
+                            {
+                                saw_data_use = true;
+                            }
+                            "v_and_b32" if v.src.len() == 2 => {
+                                let other = if op_reads(inst, &v.src[0], val)
+                                    && !op_reads(inst, &v.src[1], val)
+                                {
+                                    &v.src[1]
+                                } else if op_reads(inst, &v.src[1], val)
+                                    && !op_reads(inst, &v.src[0], val)
+                                {
+                                    &v.src[0]
+                                } else {
+                                    return false;
+                                };
+                                if const_u32(other).is_some_and(|mask| mask & 0xFFFF == 0) {
+                                    saw_data_use = true;
+                                } else {
+                                    return false;
+                                }
+                            }
+                            _ => return false,
+                        }
+                    }
+                    _ => return false,
+                }
+            }
+        }
+    }
+
+    saw_data_use
+}
+
 /// Where half `h` (dword h / 2, the high half when odd) of the parameter
 /// whose first 16-bit row is `a` comes from: a register and column of
 /// `elements`, none for padding ([`packed_layout`]; `packs` lists every
@@ -1675,6 +1968,21 @@ impl<'a> Lower<'a> {
                         if !lds_ok && let Some(meet) = lds_meetings(p, x.st, &all) {
                             lds_meet = Some((all.clone(), meet));
                             lds_ok = true;
+                        }
+                        // (`VICTORY_WAVE_LDS_SYNC=1`: the regions mix reads and writes)
+                        let mut all = all;
+                        if !lds_ok && lds_sync_on() {
+                            let together = super::split::convergent(x.st, one_wave);
+                            for (a, t) in all.iter_mut().zip(together) {
+                                *a &= t;
+                            }
+                            if let Some(meet) = lds_meetings_with(p, x.st, &all, true) {
+                                eprintln!(
+                                    "WAVE64-LDS-SYNC group={group}: LDS read and written in one lane-branch region, split without ordering there"
+                                );
+                                lds_meet = Some((all.clone(), meet));
+                                lds_ok = true;
+                            }
                         }
                         if !lds_ok {
                             // (the blocks whose LDS accesses not every lane runs: with the
@@ -6313,13 +6621,18 @@ impl<'a> Lower<'a> {
     /// rebuilt from the host view's dimensions in the GFX10 layout (image
     /// dword 1 bits 30-31 and dword 2 bits 0-13 width - 1, dword 2 bits
     /// 14-29 height - 1, dword 3 identity swizzle, last level at 16, type at
-    /// 28, dword 4 depth or layers - 1; buffer dword 2 the record count).
-    // shortcut: the base level reads 0 (the host view starts at its own
-    // level 0, so sizes the code shifts by it come out right) and the other
-    // dwords (addresses, formats, tiling) have no host value: reading them
-    // stops the program.
+    /// 28, dword 4 depth or layers - 1, array image dword 5 base array 0;
+    /// buffer dword 1 the stride at bits 16-29 where the code reads only
+    /// bits 16-31 of it, dword 2 the record count). (Port of upstream #1845.)
+    // shortcut: the base level and array base read 0 (the host view starts
+    // at its own level and slice 0, so sizes the code shifts or subtracts by
+    // them come out right) and the other dwords (addresses, formats, tiling)
+    // have no host value: reading them stops the program.
     fn descriptor_data(&mut self, inst: &Inst, site: Site) -> Result<(), Why> {
         const OTHER: Why = "a descriptor's address or format read as data";
+        const UNUSED_SLOT: Why = "an unused descriptor slot read as data";
+        const BASE_ADDR: Why = "a descriptor's base address read as data";
+        const FORMAT_META: Why = "a descriptor's format or metadata read as data";
         let Fields::Smem {
             data: Some(Operand::Scalar { code, .. }),
             ..
@@ -6544,7 +6857,12 @@ impl<'a> Lower<'a> {
                 let base = k(self, 0xFAC | ty << 28);
                 let last = self.s.m.bin(c, Bin::Shl, levels, k16);
                 let d3 = self.s.m.bin(c, Bin::Or, base, last);
-                vec![(1, d1), (2, d2), (3, d3), (4, depth)]
+                let mut words = vec![(1, d1), (2, d2), (3, d3), (4, depth)];
+                // An array's base slice (1D and 2D arrays): 0, as the base level.
+                if matches!(kind, 6 | 7) {
+                    words.push((5, self.s.m.i32(0)));
+                }
+                words
             }
             None => {
                 // A raw view counts bytes; the descriptor's record count is in elements.
@@ -6571,6 +6889,19 @@ impl<'a> Lower<'a> {
                 {
                     words.extend([(0, lo), (1, hi)]);
                 }
+                // The stride (dword 1 bits 16-29) of a raw or structured view, where
+                // nothing reads that dword's low half (the address's high bits): the
+                // console's element stride, 0 for a raw buffer. No address bit is made
+                // up, since none is read.
+                if props.0 & 0xFF == 11
+                    && let Some(v) = inst.write(Reg::S(code + first + 1))
+                    && only_high_bits_read(self.x.p, v)
+                {
+                    let stride = if stride > 1 { stride } else { 0 };
+                    let d1 = self.s.m.i32((stride & 0x3FFF) << 16);
+                    words.retain(|w| w.0 != 1);
+                    words.push((1, d1));
+                }
                 words
             }
         };
@@ -6580,7 +6911,13 @@ impl<'a> Lower<'a> {
                 Some(&(_, x)) => self.write(inst, Reg::S(code + k as u8), x, None),
                 None => {
                     if let Some(v) = inst.write(Reg::S(code + k as u8)) {
-                        self.vals.insert(v, Val::Missing(OTHER));
+                        // Which part of the descriptor the code read, for the refusal.
+                        let why = match (image.is_some(), rel) {
+                            (true, 0) | (false, 0 | 1) => BASE_ADDR,
+                            (true, 1..8) | (false, 2..4) => FORMAT_META,
+                            _ => UNUSED_SLOT,
+                        };
+                        self.vals.insert(v, Val::Missing(why));
                         self.stale.insert(v);
                     }
                 }
@@ -8406,7 +8743,11 @@ impl<'a> Lower<'a> {
                     _ => None,
                 };
                 const UNTRACKED: Why = "a select on an untracked mask";
-                let cond = match mask.and_then(|m| self.x.st.masks.get(&m).copied()) {
+                // An inline 0 or -1, or NULL (reads 0): no lane or every lane
+                // (upstream #1845).
+                let cond = match const_mask(v.src.get(2)).or_else(|| {
+                    mask.and_then(|m| self.x.st.masks.get(&m).copied())
+                }) {
                     Some(m) => self.boolean(m, c)?,
                     // A mask the code holds as a number (a constant bit
                     // pattern: every other lane, every other pair...):
@@ -8457,8 +8798,8 @@ impl<'a> Lower<'a> {
                         Some(&Operand::Scalar { code, .. }) => inst.read(Reg::S(code)),
                         _ => None,
                     };
-                    let m = m
-                        .and_then(|m| self.x.st.masks.get(&m).copied())
+                    let m = const_mask(v.src.get(2))
+                        .or_else(|| m.and_then(|m| self.x.st.masks.get(&m).copied()))
                         .ok_or("a carry-in from an untracked mask")?;
                     Some(self.boolean(m, c)?)
                 } else {
@@ -13747,5 +14088,278 @@ mod tests {
             err.contains("a first-lane read where not every lane runs"),
             "varying v255 high word must require all lanes, got: {err}"
         );
+    }
+
+    /// Runs the DXIL validator over `l` where one is installed.
+    #[cfg_attr(not(windows), allow(unused_variables))]
+    fn validate_lowered(l: &Lowered) {
+        #[cfg(windows)]
+        {
+            use super::super::validator::Validator;
+            if let Ok(mut v) = Validator::load(Validator::default_path().as_deref()) {
+                v.validate(&mut l.dxil.clone()).expect("DXIL validation failed");
+            }
+        }
+    }
+
+    fn table_srv(stride: u32, dwords: u8) -> Vec<UsedResource> {
+        vec![UsedResource {
+            kind: ResourceType::Srv,
+            root: RootType::Table,
+            table_offset_dwords: 0,
+            lower_bound: 0,
+            stride,
+            dwords,
+            user_data: 0,
+            slot: 0,
+        }]
+    }
+
+    fn refusal(r: Result<Lowered, crate::ShaderError>) -> String {
+        match r {
+            Ok(_) => panic!("expected a refusal"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    // Upstream #1845: a buffer descriptor's dword 1 read for its stride
+    // (bits 16-29) alone, through s_bfe_u32 or s_lshr_b32.
+    #[test]
+    fn a_buffer_descriptor_stride_reads_from_the_high_half_of_dword_1() {
+        let head = [
+            0xBE84_0300, // s_mov_b32 s4, s0
+            0xBE85_0380, // s_mov_b32 s5, 0
+            0xF408_0202,
+            0xFA00_0000, // s_load_dwordx4 s[8:11], s[4:5], null
+            0xF420_0404,
+            0xFA00_0000, // s_buffer_load_dword s16, s[8:11], null
+        ];
+        let tail = [
+            0x8010_1110, // s_add_u32 s16, s16, s17
+            0x7E02_0210, // v_mov_b32 v1, s16
+            0xD834_0000,
+            0x0000_0100, // ds_write_b32 v0, v1
+            S_ENDPGM,
+        ];
+        let bfe: &[u32] = &[0x9391_FF09, 0x000E_0010]; // s_bfe_u32 s17, s9, 0x000e0010
+        let lshr: &[u32] = &[0x9011_9009]; // s_lshr_b32 s17, s9, 16
+        for read in [bfe, lshr] {
+            let words = [&head[..], read, &tail[..]].concat();
+            for stride in [0, 24] {
+                let l = lower_with(&words, vec![root(RootType::Table, 0, 0)], table_srv(stride, 4))
+                    .unwrap_or_else(|e| panic!("stride {stride}: {e}"));
+                validate_lowered(&l);
+            }
+            // 16 bytes into a table entry, where the host cannot tell the address
+            // (refused before the stride was rebuilt).
+            let mut words = words;
+            words[3] = 0xFA00_0010; // s_load_dwordx4 s[8:11], s[4:5], 16
+            let mut used = table_srv(24, 4);
+            used[0].table_offset_dwords = 4;
+            let l = lower_with(&words, vec![root(RootType::Table, 0, 0)], used).unwrap();
+            validate_lowered(&l);
+        }
+
+        // Its low half (the address's high bits) comes from the host where it can
+        // tell the view's address (a view at the start of a table entry)...
+        let low = [0x8711_FF09, 0x0000_FFFF]; // s_and_b32 s17, s9, 0xffff
+        let words = [&head[..], &low[..], &tail[..]].concat();
+        let l = lower_with(&words, vec![root(RootType::Table, 0, 0)], table_srv(24, 4)).unwrap();
+        validate_lowered(&l);
+        // ...and has no value where it cannot (16 bytes into an entry).
+        let mut words = words;
+        words[3] = 0xFA00_0010; // s_load_dwordx4 s[8:11], s[4:5], 16
+        let mut used = table_srv(24, 4);
+        used[0].table_offset_dwords = 4;
+        let err = refusal(lower_with(&words, vec![root(RootType::Table, 0, 0)], used));
+        assert!(err.contains("a descriptor's base address read as data"), "{err}");
+
+        // Nor does dword 3 (format, out-of-bounds mode, type).
+        let words = [&head[..], &[0x8010_0B10][..], &tail[1..]].concat(); // s_add_u32 s16, s16, s11
+        let err = refusal(lower_with(&words, vec![root(RootType::Table, 0, 0)], table_srv(0, 4)));
+        assert!(err.contains("a descriptor's format or metadata read as data"), "{err}");
+    }
+
+    // Upstream #1845: a 2D array's dword 5 (BASE_ARRAY) reads 0, as the base level.
+    #[test]
+    fn an_array_image_descriptor_base_slice_reads_as_zero() {
+        let words = [
+            0xBE84_0300, // s_mov_b32 s4, s0
+            0xBE85_0380, // s_mov_b32 s5, 0
+            0xF40C_0202,
+            0xFA00_0000, // s_load_dwordx8 s[8:15], s[4:5], null
+            0xF000_1128,
+            0x0002_0100, // image_load v1, v[0:2], s[8:15] dmask:0x1 dim:2D_ARRAY unorm
+            0x8090_0D0C, // s_sub_u32 s16, s12, s13 (dword 4 - dword 5)
+            0x4A02_0210, // v_add_nc_u32 v1, s16, v1
+            0xD834_0000,
+            0x0000_0100, // ds_write_b32 v0, v1
+            S_ENDPGM,
+        ];
+        let l = lower_with(&words, vec![root(RootType::Table, 0, 0)], table_srv(0, 8)).unwrap();
+        validate_lowered(&l);
+        // Without the array base it was refused, as dword 6 still is.
+        let mut six = words;
+        six[6] = 0x8090_0E0C; // s_sub_u32 s16, s12, s14
+        let err = refusal(lower_with(&six, vec![root(RootType::Table, 0, 0)], table_srv(0, 8)));
+        assert!(err.contains("a descriptor's format or metadata read as data"), "{err}");
+    }
+
+    /// A compute program of `threads` with the root layout `layout`, on a host of
+    /// `host` lanes.
+    fn lower_cs_host(
+        words: &[u32],
+        threads: [u32; 3],
+        layout: Vec<RootParam>,
+        wave64: bool,
+        host: u32,
+    ) -> Result<Lowered, crate::ShaderError> {
+        let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        let sgprs: u32 = layout.iter().map(|p| p.sgprs).sum();
+        let native = NativeProgram {
+            stage: HwStage::Cs,
+            wave64,
+            vgprs: 256,
+            layout,
+            used: vec![],
+            io: StageIo::Cs(ComputeIo {
+                rsrc2: 1 << 15 | sgprs.max(2) << 1,
+                threads,
+            }),
+            code,
+        };
+        let previous = super::TEST_HOST_WAVE.replace(Some(host));
+        let result = (|| {
+            let p = ir::build(&native.code, wave64, 256).unwrap();
+            let st = structure::structure(&p)?;
+            let res = resource::track(&p, &native.layout, native.stage, Some(&st))?;
+            let io = io::raise(&p, &native).unwrap();
+            lower(&Parts {
+                native: &native,
+                p: &p,
+                st: &st,
+                io: &io,
+                res: &res,
+                inputs: vec![],
+                outputs: vec![],
+                prims: vec![],
+                mesh_stride: 0,
+            })
+        })();
+        super::TEST_HOST_WAVE.set(previous);
+        result
+    }
+
+    // Upstream #1845: selects and carries on lane masks that are not compare results:
+    // uniform s_cselect, constants (inline, NULL, s_mov), wave64 masks built from two
+    // 32-bit halves, joins of a compare and a constant; on 32- and 64-lane hosts.
+    #[test]
+    fn selects_and_carries_read_uniform_and_constant_masks() {
+        let cnd = |mask_src: u32| [0xD501_0001u32, 256 | (129 << 9) | (mask_src << 18)];
+        // v_add_co_ci_u32 v1, vcc, v0, 1, <mask>
+        let carry = |mask_src: u32| [0xD528_6A01u32, 256 | (129 << 9) | (mask_src << 18)];
+        let layout = || vec![root(RootType::Constants, 0, 0), root(RootType::Constants, 1, 1)];
+        let [a0, a1] = cnd(6);
+        let [m0, m1] = cnd(2);
+        let store = [0xD834_0000u32, 0x0000_0100, S_ENDPGM];
+        let mut cases: Vec<(String, bool, Vec<u32>)> = vec![
+            ("wave64 s_cselect_b64 and s_and_b64".into(), true,
+             vec![0xBF06_8000, 0x8582_80C1, 0xBF07_8001, 0x8584_80C1, 0x8786_0402, a0, a1]),
+            ("wave32 s_cselect_b32".into(), false, vec![0xBF06_8000, 0x8502_80C1, m0, m1]),
+            ("wave64 s_mov_b64 -1".into(), true, vec![0xBE82_04C1, m0, m1]),
+            ("wave64 split s_cselect_b32".into(), true,
+             vec![0xBF06_8000, 0x8502_80C1, 0x8503_80C1, m0, m1]),
+            ("wave64 split vcc copies".into(), true, vec![0x7D84_0080, 0xBE82_036A, 0xBE83_036B, m0, m1]),
+            ("wave64 join of a compare and 0".into(), true,
+             vec![0xBF06_8000, 0xBF85_0003, 0x7D84_0080, 0xBE82_046A, 0xBF82_0001, 0xBE82_0480, m0, m1]),
+        ];
+        for (name, src) in [("inline -1", 193), ("inline 0", 128), ("NULL", 125)] {
+            for wave64 in [false, true] {
+                cases.push((format!("select {name} wave64={wave64}"), wave64, cnd(src).to_vec()));
+                cases.push((format!("carry {name} wave64={wave64}"), wave64, carry(src).to_vec()));
+            }
+        }
+        for (name, wave64, body) in cases {
+            let words = [&body[..], &store[..]].concat();
+            let threads = if wave64 { [64, 1, 1] } else { [32, 1, 1] };
+            for host in [32, 64] {
+                let l = lower_cs_host(&words, threads, layout(), wave64, host)
+                    .unwrap_or_else(|e| panic!("{name}, host {host}: {e}"));
+                validate_lowered(&l);
+            }
+        }
+    }
+
+    // Upstream #1890 fallback: a one-wave group of 64 on a 32-lane host whose lane branch
+    // both writes and reads LDS (at an address read from LDS) keeps 64-lane waves, unless
+    // `VICTORY_WAVE_LDS_SYNC=1` splits it, the waves meeting around the branch.
+    #[test]
+    fn lds_read_and_written_in_one_lane_branch_splits_only_with_lds_sync() {
+        let words = [
+            0xD8D8_0000,
+            0x0100_0000, // ds_read_b32 v1, v0 (an address read from LDS)
+            0x7D88_0081, // v_cmp_gt_u32_e32 vcc, 1, v0
+            0xBE86_246A, // s_and_saveexec_b64 s[6:7], vcc
+            0xBF88_0004, // s_cbranch_execz -> restore exec
+            0xD834_0000,
+            0x0000_0001, // ds_write_b32 v1, v0
+            0xD8D8_0000,
+            0x0200_0001, // ds_read_b32 v2, v1
+            0xBEFE_0406, // s_mov_b64 exec, s[6:7]
+            0xD834_0000,
+            0x0000_0201, // ds_write_b32 v1, v2
+            S_ENDPGM,
+        ];
+        let run = |sync: bool| {
+            let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let native = NativeProgram {
+                stage: HwStage::Cs,
+                wave64: true,
+                vgprs: 256,
+                layout: vec![],
+                used: vec![],
+                io: StageIo::Cs(ComputeIo {
+                    rsrc2: 1 << 15, // 512 bytes of LDS
+                    threads: [64, 1, 1],
+                }),
+                code,
+            };
+            let p = ir::build(&native.code, true, 256).unwrap();
+            let st = structure::structure(&p).unwrap();
+            let res = resource::track(&p, &native.layout, native.stage, Some(&st)).unwrap();
+            let io = io::raise(&p, &native).unwrap();
+            let wave = super::TEST_HOST_WAVE.replace(Some(32));
+            let lds_sync = super::TEST_LDS_SYNC.replace(Some(sync));
+            let out = lower(&Parts {
+                native: &native,
+                p: &p,
+                st: &st,
+                io: &io,
+                res: &res,
+                inputs: vec![],
+                outputs: vec![],
+                prims: vec![],
+                mesh_stride: 0,
+            });
+            super::TEST_HOST_WAVE.set(wave);
+            super::TEST_LDS_SYNC.set(lds_sync);
+            out.unwrap()
+        };
+        assert_eq!(run(false).wave_size, Some(64), "off by default");
+        let split = run(true);
+        assert_eq!(split.wave_size, Some(32));
+        validate_lowered(&split);
+        // The host waves meet around the branch: before it is entered, after it joins.
+        let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        let p = ir::build(&code, true, 256).unwrap();
+        let st = structure::structure(&p).unwrap();
+        let mut all = super::all_lane_blocks(&st).unwrap();
+        for (a, t) in all.iter_mut().zip(super::super::split::convergent(&st, true)) {
+            *a &= t;
+        }
+        assert_eq!(super::lds_meetings(&p, &st, &all), None);
+        let meet = super::lds_meetings_with(&p, &st, &all, true).unwrap();
+        assert!(meet.iter().any(|m| m.1), "{meet:?}");
+        assert!(meet.iter().any(|m| m.0), "{meet:?}");
     }
 }

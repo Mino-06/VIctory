@@ -8,6 +8,13 @@
 //! The entry is our own encoding of [`HostShader`]: a field added to it
 //! must be added to `encode` and `decode` too (entries of older builds
 //! are ignored anyway).
+//!
+//! A translation that fails is cached too, with its reason, under the same
+//! key: the translation depends only on the container and on what the build
+//! key holds, so it would fail the same way on every launch. Each hit on a
+//! failed entry logs the reason again and returns it as the error, so the
+//! failure is never hidden. `VICTORY_SHADER_CACHE_FAILURES=0` ignores those
+//! entries and translates again (to see the translator's own logs).
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -69,6 +76,7 @@ fn build() -> &'static [u8; 32] {
                     "VICTORY_WAVE_DEEP_SKIPS",
                     "VICTORY_WAVE_LOCAL",
                     "VICTORY_WAVE_OWN_BITS",
+                    "VICTORY_WAVE_LDS_SYNC",
                     "VICTORY_F16_NEAREST",
                 ] {
                     bytes.extend_from_slice(name.as_bytes());
@@ -139,6 +147,8 @@ pub(crate) fn host_shader_linked(
 struct Translate<F> {
     translate: F,
     ran: AtomicBool,
+    /// Stores a failure as an entry of its own instead of returning it.
+    keep_failures: bool,
 }
 
 impl<F: Fn(&[u8]) -> Result<HostShader, String> + Send + Sync> Converter for Translate<F> {
@@ -151,9 +161,21 @@ impl<F: Fn(&[u8]) -> Result<HostShader, String> + Send + Sync> Converter for Tra
     }
     fn convert(&self, input: &[u8]) -> anyhow::Result<Vec<u8>> {
         self.ran.store(true, Ordering::Relaxed);
-        let shader = (self.translate)(&input[33..]).map_err(anyhow::Error::msg)?;
-        Ok(encode(&shader))
+        match (self.translate)(&input[33..]) {
+            Ok(shader) => Ok(encode(&shader)),
+            Err(reason) if self.keep_failures => Ok(encode_failure(&reason)),
+            Err(reason) => Err(anyhow::Error::msg(reason)),
+        }
     }
+}
+
+/// Whether failed translations are cached (`VICTORY_SHADER_CACHE_FAILURES=0`
+/// turns it off).
+fn keep_failures() -> bool {
+    static KEEP: OnceLock<bool> = OnceLock::new();
+    *KEEP.get_or_init(|| {
+        std::env::var("VICTORY_SHADER_CACHE_FAILURES").map_or(true, |v| v.trim() != "0")
+    })
 }
 
 fn cached(
@@ -163,24 +185,55 @@ fn cached(
     container: &[u8],
     translate: impl Fn(&[u8]) -> Result<HostShader, String> + Send + Sync,
 ) -> Result<HostShader, String> {
+    cached_with(cache, build, wave32, container, translate, keep_failures())
+}
+
+fn cached_with(
+    cache: &Cache,
+    build: &[u8; 32],
+    wave32: bool,
+    container: &[u8],
+    translate: impl Fn(&[u8]) -> Result<HostShader, String> + Send + Sync,
+    keep_failures: bool,
+) -> Result<HostShader, String> {
     let input = [&build[..], &[u8::from(wave32)], container].concat();
     let converter = Translate {
         translate,
         ran: AtomicBool::new(false),
+        keep_failures,
     };
     for _ in 0..2 {
         let path = cache
             .get_or_convert(&converter, &input)
             .map_err(|e| format!("{e:#}"))?;
-        if let Some(shader) = std::fs::read(&path).ok().and_then(|b| decode(&b)) {
-            let (counter, what) = if converter.ran.load(Ordering::Relaxed) {
-                (&MISSES, "translated and cached")
-            } else {
-                (&HITS, "from the cache")
-            };
-            counter.fetch_add(1, Ordering::Relaxed);
-            tracing::debug!(path = %path.display(), "shader {what}");
-            return Ok(shader);
+        match std::fs::read(&path).ok().and_then(|b| read_entry(&b)) {
+            Some(Ok(shader)) => {
+                let (counter, what) = if converter.ran.load(Ordering::Relaxed) {
+                    (&MISSES, "translated and cached")
+                } else {
+                    (&HITS, "from the cache")
+                };
+                counter.fetch_add(1, Ordering::Relaxed);
+                tracing::debug!(path = %path.display(), "shader {what}");
+                return Ok(shader);
+            }
+            Some(Err(reason)) if keep_failures => {
+                if converter.ran.load(Ordering::Relaxed) {
+                    MISSES.fetch_add(1, Ordering::Relaxed);
+                    tracing::debug!(path = %path.display(), %reason, "shader translation failed; failure cached");
+                } else {
+                    HITS.fetch_add(1, Ordering::Relaxed);
+                    tracing::warn!(
+                        path = %path.display(),
+                        %reason,
+                        "shader translation failed in an earlier run (cached failure; VICTORY_SHADER_CACHE_FAILURES=0 translates again)"
+                    );
+                }
+                return Err(reason);
+            }
+            // A failure an earlier run cached while failures are not kept
+            // now, or a damaged entry: removed below, then translated again.
+            Some(Err(_)) | None => {}
         }
         tracing::debug!(path = %path.display(), "unreadable shader cache entry; translating again");
         let _ = std::fs::remove_file(&path);
@@ -190,6 +243,21 @@ fn cached(
 }
 
 const MAGIC: &[u8; 4] = b"VSH1";
+/// A failed translation: this tag, then the reason in UTF-8.
+const FAILED: &[u8; 4] = b"VSF1";
+
+fn encode_failure(reason: &str) -> Vec<u8> {
+    [FAILED.as_slice(), reason.as_bytes()].concat()
+}
+
+/// A cache entry: a translation, or the reason one failed. `None` for a
+/// damaged entry.
+fn read_entry(bytes: &[u8]) -> Option<Result<HostShader, String>> {
+    match bytes.strip_prefix(FAILED.as_slice()) {
+        Some(reason) => String::from_utf8(reason.to_vec()).ok().map(Err),
+        None => decode(bytes).map(Ok),
+    }
+}
 const STAGES: [HwStage; 8] = [
     HwStage::Ls,
     HwStage::Hs,
@@ -423,9 +491,50 @@ mod tests {
         assert_eq!(cached(&cache, &build, false, container, translate), Ok(shader()));
         assert_eq!(runs.load(Ordering::Relaxed), 3);
 
-        // Failures are not stored.
-        let fail = |_: &[u8]| Err::<HostShader, _>("unsupported".to_owned());
-        assert!(cached(&cache, &build, false, b"other", fail).is_err());
+    }
+
+    #[test]
+    fn failures_are_cached_with_their_reason() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Cache::open(dir.path()).unwrap();
+        let runs = AtomicU64::new(0);
+        let fail = |_: &[u8]| {
+            runs.fetch_add(1, Ordering::Relaxed);
+            Err::<HostShader, _>("unsupported opcode v_foo".to_owned())
+        };
+        let reason = Err("unsupported opcode v_foo".to_owned());
+        assert_eq!(cached_with(&cache, &[7; 32], false, b"bad", fail, true), reason);
+        // Hits return the same reason without translating again.
+        assert_eq!(cached_with(&cache, &[7; 32], false, b"bad", fail, true), reason);
+        assert_eq!(cached_with(&cache, &[7; 32], false, b"bad", fail, true), reason);
+        assert_eq!(runs.load(Ordering::Relaxed), 1);
+        // Per build key: another build, or the other wave mode, tries again.
+        assert_eq!(cached_with(&cache, &[8; 32], false, b"bad", fail, true), reason);
+        assert_eq!(cached_with(&cache, &[7; 32], true, b"bad", fail, true), reason);
+        assert_eq!(runs.load(Ordering::Relaxed), 3);
+
+        // With failures not kept, the cached failure is ignored and the
+        // shader translated again on each call.
+        let again = cached_with(&cache, &[7; 32], false, b"bad", fail, false).unwrap_err();
+        assert!(again.ends_with("unsupported opcode v_foo"), "{again}");
+        let again = cached_with(&cache, &[7; 32], false, b"bad", fail, false).unwrap_err();
+        assert!(again.ends_with("unsupported opcode v_foo"), "{again}");
+        assert_eq!(runs.load(Ordering::Relaxed), 5);
+
+        // A build whose translator succeeds has an entry of its own.
+        let ok = |_: &[u8]| Ok(shader());
+        assert_eq!(cached_with(&cache, &[9; 32], false, b"bad", ok, true), Ok(shader()));
+        assert_eq!(cached_with(&cache, &[9; 32], false, b"bad", fail, true), Ok(shader()));
+        assert_eq!(runs.load(Ordering::Relaxed), 5);
+    }
+
+    #[test]
+    fn failure_entries_round_trip_and_reject_damage() {
+        let bytes = encode_failure("no DXIL part");
+        assert_eq!(read_entry(&bytes), Some(Err("no DXIL part".to_owned())));
+        assert_eq!(read_entry(&encode(&shader())), Some(Ok(shader())));
+        assert_eq!(read_entry(&[FAILED.as_slice(), &[0xff, 0xfe]].concat()), None);
+        assert_eq!(read_entry(b"VSF0"), None);
     }
 
     #[test]

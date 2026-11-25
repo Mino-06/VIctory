@@ -95,6 +95,7 @@ mod permlane_tests;
 mod rect;
 mod sampler;
 mod shader;
+mod split;
 mod threading;
 #[cfg(windows)]
 pub mod validator;

@@ -54,3 +54,28 @@ before).
   The first-launch fix is checked by tests of its queue, not in the title.
 - Push and pull request: the GitHub account here has read access only.
   See NEXT_STEPS.md.
+
+## 2026-11-25: NEXT_STEPS items 3, 2 and 1 (branch claude/nvidia-next-steps-e4ce0b)
+
+| Item | Commit | What changed |
+|---|---|---|
+| 3. Cache translation failures | 57f19fe | A failed translation is cached with its reason (`VSF1` entry) under the same build key as a success; every hit logs the reason as a warning and returns it as the error. `VICTORY_SHADER_CACHE_FAILURES=0` ignores those entries and translates again |
+| 2. Upstream #1845, stride and BASE_ARRAY | 4bfca15 | `descriptor_data`: buffer dword 1 = stride at bits 16-29 where every read discards bits 0-15 (upstream's `only_high_bits_read`); 1D/2D array image dword 5 = 0. The fork's host view address is still used where the code reads the whole dword. Refusals name the part read (base address, format/metadata, unused slot) |
+| 2. Upstream #1845, untracked masks | 7b42f3f | `v_cndmask_b32` and `v_*_co_ci_u32` take inline 0 / NULL (no lane) and -1 (every lane). The rest of upstream's commit (uniform `s_cselect`, constants, split wave64 halves, compare/constant joins) already worked in the fork's structure pass; the new test checks all of them on 32- and 64-lane hosts |
+| 1. Upstream #1890 `split.rs` | d03ab87 | `convergent` / `post_dominators` ported (`emit/split.rs`). `VICTORY_WAVE_LDS_SYNC=1` (off by default, part of the cache key): where `lds_meetings` refuses a one-wave group, split it anyway, the waves meeting around the regions and before LDS accesses in blocks both analyses call together; inside the region the halves stay unordered |
+
+Tests: `cargo test --release --workspace --no-fail-fast` on the RTX 3090:
+Log: `docs/overnight/tests-3-next-steps.txt`. 705 -> 709 (items 3, 2a) -> 710 (2b) -> 712 (item 1) passed, 0 failed, 15 ignored.
+
+Left / not checked:
+- `VICTORY_WAVE_LDS_SYNC=1` was not tried on the 4 structure-builder programs:
+  that needs the title, which was not run (leaked build). Turning it on by
+  default needs that check first: the shortcut (no ordering inside a
+  region) can be wrong.
+- Upstream #1890's split lowering itself (`exchange`, `split_ballot`,
+  ...) was not ported: the fork has its own (`exchange`, `lds_meetings`).
+- `VICTORY_WAVE_LDS_ASSUME` changes translations but is not in the shader
+  cache's build key (pre-existing).
+- A fresh worktree needs the Agility SDK copied to `target/release/D3D12`
+  **before** the first build of `victory-shader` (its build script decides
+  then), or the GPU tests fail with "SM 0x65 only".
