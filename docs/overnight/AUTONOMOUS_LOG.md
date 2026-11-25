@@ -275,3 +275,17 @@ cached, #1845 dword 1/5 and masks, #1890 `split.rs` behind
   some LDS accesses as private per lane when they are not (neighbour reads
   like `lds[t+1]`, uniform addresses); ~117 lowerings run as two 32-lane
   waves with no ordering. Notes in the session's `shader-gaps.md`.
+
+## Pass 11: the prologue renders right with a warm cache
+
+- chain3 after rebuilding the diagnostics binary (every shader translated
+  again on the first run): vis_on (INDIRECT_WINDOW + LATE_WAIT) ran first,
+  cold: 1.27 fps, 1,359 draws dropped/frame, white over-exposure at
+  360-390 s. vis_off ran second, warm: 1.81 fps, 689 dropped, and the
+  cinematic is **correct**: exposure, prison yard, character and hair
+  (`docs/overnight/vis-on-off-cold-warm.png`, top on/cold, bottom off/warm).
+- So the white and blocky screens come mostly from passes whose pipeline
+  is not made yet; they go once the caches are warm. The order biased this
+  pair: chain5 repeats it warm (vis_off2 then vis_on2) to see whether the
+  two switches themselves change the image.
+- lds_prime (VICTORY_WAVE_LDS_SYNC=1, retranslating): 1.90 fps, no crash.
