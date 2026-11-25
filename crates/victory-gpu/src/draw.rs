@@ -357,6 +357,12 @@ pub(crate) static HEAP_VIEWS_ELSEWHERE: AtomicU64 = AtomicU64::new(0);
 /// index ([`State::heap_buffers`]), and the microseconds they took.
 pub(crate) static HEAP_BUFFER_PASSES: AtomicU64 = AtomicU64::new(0);
 pub(crate) static HEAP_BUFFER_MICROS: AtomicU64 = AtomicU64::new(0);
+/// Of [`HEAP_BUFFER_MICROS`]: the slots looked at, the copies refreshed,
+/// the textures; then the slots looked at, and of the first part the
+/// microseconds making host views and finding their copies.
+/// Slots of the heap pass written again with the view they held.
+pub(crate) static HEAP_SAME_VIEW: AtomicU64 = AtomicU64::new(0);
+pub(crate) static HEAP_BUFFER_PARTS: [AtomicU64; 6] = [const { AtomicU64::new(0) }; 6];
 /// Textures brought up to date for shaders that pick them by index
 /// ([`State::heap_textures`]), the bytes of their memory, and the slots
 /// still waiting.
@@ -1367,17 +1373,32 @@ impl State {
         // released resource goes stale without a write, and a slot written
         // before its memory had a host copy is only made then.
         let (slots, mut kept) = host.buffers.begin_pass();
-        let ranges = &mut kept.by_slot;
+        let held = &mut *kept;
+        let (ranges, keys) = (&mut held.by_slot, &mut held.keys);
         // Whether the device was there before the pass: a view that removes
         // it is named below.
         static GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         let mut alive = !GONE.load(Ordering::Relaxed) && crate::descriptor::host::device_removed().is_none();
+        HEAP_BUFFER_PARTS[3].fetch_add(slots.len() as u64, Ordering::Relaxed);
+        let (mut mirror_us, mut copy_us) = (0u64, 0u64);
+        let mut same = 0u64;
         for (n, &index) in slots.iter().enumerate() {
+            let handle = heap.handle(index);
+            let key = handle.and_then(crate::descriptor::host::slot_key);
+            // Written again with the view it held: its range stands.
+            if key.is_some() && keys.get(&index) == key.as_ref() && ranges.contains_key(&index) {
+                same += 1;
+                continue;
+            }
             ranges.remove(&index);
-            let Some(handle) = heap.handle(index) else {
+            keys.remove(&index);
+            let Some(handle) = handle else {
                 continue;
             };
-            let Some(view) = host.mirror(index, handle, true) else {
+            let mirrored = std::time::Instant::now();
+            let view = host.mirror(index, handle, true);
+            mirror_us += mirrored.elapsed().as_micros() as u64;
+            let Some(view) = view else {
                 continue;
             };
             // Every 64 views while the device lives (a cheap query).
@@ -1397,7 +1418,10 @@ impl State {
             }
             // The copy the slot shows (`buffer_copy`), not the one the
             // view's range alone would find.
-            let Some((shadow, address, len)) = crate::descriptor::host::buffer_copy(&view) else {
+            let found = std::time::Instant::now();
+            let copy = crate::descriptor::host::buffer_copy(&view);
+            copy_us += found.elapsed().as_micros() as u64;
+            let Some((shadow, address, len)) = copy else {
                 continue;
             };
             #[cfg(feature = "diagnostics")]
@@ -1405,8 +1429,16 @@ impl State {
                 HEAP_VIEWS_ELSEWHERE.fetch_add(1, Ordering::Relaxed);
             }
             ranges.insert(index, (shadow, address, address + len));
+            if let Some(key) = key {
+                keys.insert(index, key);
+            }
         }
+        HEAP_SAME_VIEW.fetch_add(same, Ordering::Relaxed);
+        HEAP_BUFFER_PARTS[4].fetch_add(mirror_us, Ordering::Relaxed);
+        HEAP_BUFFER_PARTS[5].fetch_add(copy_us, Ordering::Relaxed);
         let views = ranges.len() as u32;
+        let slots_done = std::time::Instant::now();
+        HEAP_BUFFER_PARTS[0].fetch_add((slots_done - started).as_micros() as u64, Ordering::Relaxed);
         // Per host copy, the span its picked views cover.
         let mut spans: std::collections::HashMap<usize, (std::sync::Arc<crate::shadow::Shadow>, u64, u64)> =
             std::collections::HashMap::new();
@@ -1450,7 +1482,10 @@ impl State {
             }
             shadow.refresh(list, *from, to - from);
         }
+        let refreshed = std::time::Instant::now();
+        HEAP_BUFFER_PARTS[1].fetch_add((refreshed - slots_done).as_micros() as u64, Ordering::Relaxed);
         self.heap_textures(list, heap, host);
+        HEAP_BUFFER_PARTS[2].fetch_add(refreshed.elapsed().as_micros() as u64, Ordering::Relaxed);
         HEAP_BUFFER_PASSES.fetch_add(1, Ordering::Relaxed);
         HEAP_BUFFER_MICROS.fetch_add(started.elapsed().as_micros() as u64, Ordering::Relaxed);
         static LOGGED: AtomicU64 = AtomicU64::new(0);

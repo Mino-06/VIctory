@@ -961,6 +961,20 @@ fn submitter(all: &mut Vec<(u32, Submitter)>, id: u32) -> &mut Submitter {
     &mut all[at].1
 }
 
+/// List calls by the line of `list.rs` that made them: count and
+/// nanoseconds, for the costliest kinds of call.
+static BY_CALL: Mutex<Vec<(u32, u64, u64)>> = Mutex::new(Vec::new());
+
+/// A list call made at line `line` of `list.rs` that began at `started`.
+pub(crate) fn by_call(line: u32, started: std::time::Instant) {
+    let ns = started.elapsed().as_nanos() as u64;
+    let mut all = BY_CALL.lock().unwrap_or_else(|e| e.into_inner());
+    match all.iter_mut().find(|c| c.0 == line) {
+        Some(c) => (c.1, c.2) = (c.1 + 1, c.2 + ns),
+        None => all.push((line, 1, ns)),
+    }
+}
+
 /// A list call on this thread that began at `started` has returned.
 pub(crate) fn recorded(started: std::time::Instant) {
     let ns = started.elapsed().as_nanos() as u64;
@@ -1098,6 +1112,16 @@ pub(crate) fn log(frames: f64) {
         mb(c[C::TexHashed as usize]),
         mb(c[C::TexChanged as usize]),
     );
+    {
+        let mut calls = std::mem::take(&mut *BY_CALL.lock().unwrap_or_else(|e| e.into_inner()));
+        calls.sort_by_key(|c| std::cmp::Reverse(c.2));
+        let top: Vec<String> = calls
+            .iter()
+            .take(10)
+            .map(|c| format!("list.rs:{} {:.0}x {:.1} ms", c.0, c.1 as f64 / frames, c.2 as f64 / 1e6 / frames))
+            .collect();
+        tracing::info!("  list calls by kind per frame: {}", top.join(", "));
+    }
     tracing::info!(
         "recording per frame ({frames:.0} frames): {:.0} list calls {:.1} ms (all recording \
          threads); {:.1} ms waiting for pipelines; dynamic slots: {:.0} tables asked, {:.0} \

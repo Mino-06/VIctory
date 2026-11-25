@@ -16,6 +16,22 @@ use crate::host::host;
 pub(crate) struct BufferRanges<T> {
     passes: u64,
     pub(crate) by_slot: std::collections::HashMap<u32, (T, u64, u64)>,
+    /// The view ([`slot_key`]) each slot of `by_slot` was found from: a
+    /// slot the title wrote again with the same view keeps its range
+    /// without being looked at (some 40,000 slots a frame in the prologue,
+    /// 100 ms of the frame when all were).
+    pub(crate) keys: std::collections::HashMap<u32, u64>,
+}
+
+/// What a title descriptor slot holds, as the host slot's record of it:
+/// view index and generation. `None` if it holds no view of ours.
+pub(crate) fn slot_key(handle: u64) -> Option<u64> {
+    if handle == 0 {
+        return None;
+    }
+    // SAFETY: the handle is a descriptor slot in title memory.
+    let [tag, i, generation] = unsafe { (handle as *const [u32; 3]).read_unaligned() };
+    (tag == VIEW_TAG).then_some(u64::from(generation) << 32 | u64::from(i))
 }
 
 /// The directly indexed buffer views of one heap, with the host copies
@@ -34,6 +50,7 @@ impl<T> BufferViews<T> {
             ranges: Mutex::new(BufferRanges {
                 passes: 0,
                 by_slot: Default::default(),
+                keys: Default::default(),
             }),
         }
     }
@@ -58,6 +75,7 @@ impl<T> BufferViews<T> {
         // fresh heap and every 16 passes thereafter.
         let slots = if kept.passes.is_multiple_of(16) {
             kept.by_slot.clear();
+            kept.keys.clear();
             self.slots
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
