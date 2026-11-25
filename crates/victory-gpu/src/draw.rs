@@ -360,6 +360,59 @@ pub(crate) static HEAP_BUFFER_MICROS: AtomicU64 = AtomicU64::new(0);
 /// Of [`HEAP_BUFFER_MICROS`]: the slots looked at, the copies refreshed,
 /// the textures; then the slots looked at, and of the first part the
 /// microseconds making host views and finding their copies.
+/// Nanoseconds in parts of the table binding, summed per thread and
+/// flushed into [`PROBES`] now and then: 0 table entries from the title's
+/// slots, 1 fresh tables found made, 2 fresh tables made, 3 `readable`,
+/// 4 of it finding and refreshing buffer copies, 5 of it texture uploads,
+/// 6 of it states, 7 views made in dynamic slots.
+#[cfg(feature = "diagnostics")]
+pub(crate) static PROBES: [AtomicU64; 8] = [const { AtomicU64::new(0) }; 8];
+#[cfg(feature = "diagnostics")]
+thread_local! {
+    static PROBE: std::cell::Cell<([u64; 8], u32)> = const { std::cell::Cell::new(([0; 8], 0)) };
+}
+/// A start time for [`probe`] and [`BIND_PARTS`]: nothing outside
+/// diagnostics builds.
+#[cfg(feature = "diagnostics")]
+type Timer = std::time::Instant;
+#[cfg(not(feature = "diagnostics"))]
+#[derive(Clone, Copy)]
+struct Timer;
+#[cfg(not(feature = "diagnostics"))]
+impl Timer {
+    fn now() -> Self {
+        Self
+    }
+}
+#[cfg(not(feature = "diagnostics"))]
+fn probe(_: usize, _: Timer) {}
+#[cfg(not(feature = "diagnostics"))]
+fn bind_part(_: usize, _: Timer) {}
+#[cfg(feature = "diagnostics")]
+fn bind_part(i: usize, started: Timer) {
+    BIND_PARTS[i].fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+}
+#[cfg(feature = "diagnostics")]
+fn probe(i: usize, started: Timer) {
+    let ns = started.elapsed().as_nanos() as u64;
+    PROBE.with(|p| {
+        let (mut sums, mut n) = p.get();
+        sums[i] += ns;
+        n += 1;
+        if n >= 2048 {
+            for (k, v) in sums.iter().enumerate() {
+                PROBES[k].fetch_add(*v, Ordering::Relaxed);
+            }
+            (sums, n) = ([0; 8], 0);
+        }
+        p.set((sums, n));
+    });
+}
+
+/// Nanoseconds of `bind` in its tables, title memory by address, user
+/// data and root views, and root unordered access views.
+#[cfg(feature = "diagnostics")]
+pub(crate) static BIND_PARTS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
 /// Slots of the heap pass written again with the view they held.
 pub(crate) static HEAP_SAME_VIEW: AtomicU64 = AtomicU64::new(0);
 pub(crate) static HEAP_BUFFER_PARTS: [AtomicU64; 6] = [const { AtomicU64::new(0) }; 6];
@@ -969,7 +1022,9 @@ impl State {
         for stage in &p.stages {
             let t = stage.translated();
             STORES.set(t.stores);
+            let timed = Timer::now();
             let made = self.tables(list, &t.used, &t.host.root_indexed_views, compute);
+            bind_part(0, timed);
             STORES.set(true);
             if made.iter().any(|m| m.1 == u32::MAX) {
                 once!("a draw whose descriptor table found no free slots is dropped");
@@ -980,6 +1035,7 @@ impl State {
             let writes = (t.stores || !write_skip())
                 && !crate::pipeline::builder_quarantined(self.pipeline as This);
             // Title memory by address: what the shader finds it by.
+            let timed = Timer::now();
             let memory = if t.host.root_srvs.contains(&victory_shader::emit::SLOT_MEMORY) {
                 let Some(ready) = self.memory_ready(list, compute, writes) else {
                     once!("a shader that reads title memory by address without a view heap to hold its views: the draw is dropped");
@@ -989,6 +1045,8 @@ impl State {
             } else {
                 None
             };
+            bind_part(1, timed);
+            let timed = Timer::now();
             if let Some((param, dwords)) = stage.user_data {
                 let mut values = vec![0u32; dwords as usize];
                 for u in &t.host.user_data {
@@ -1093,6 +1151,8 @@ impl State {
                     }
                 }
             }
+            bind_part(2, timed);
+            let timed = Timer::now();
             for &(slot, param) in &stage.root_uavs {
                 if slot == victory_shader::emit::SLOT_FAULTS {
                     // Ours: where shaders note the pages they found empty.
@@ -1120,6 +1180,7 @@ impl State {
                     return false;
                 }
             }
+            bind_part(3, timed);
         }
         // Depth textures it writes through unordered access: their colour
         // twins hold what they lack from here on.
@@ -1380,6 +1441,7 @@ impl State {
         static GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         let mut alive = !GONE.load(Ordering::Relaxed) && crate::descriptor::host::device_removed().is_none();
         HEAP_BUFFER_PARTS[3].fetch_add(slots.len() as u64, Ordering::Relaxed);
+        #[cfg_attr(not(feature = "diagnostics"), allow(unused_mut))]
         let (mut mirror_us, mut copy_us) = (0u64, 0u64);
         let mut same = 0u64;
         for (n, &index) in slots.iter().enumerate() {
@@ -1395,9 +1457,13 @@ impl State {
             let Some(handle) = handle else {
                 continue;
             };
+            #[cfg(feature = "diagnostics")]
             let mirrored = std::time::Instant::now();
             let view = host.mirror(index, handle, true);
-            mirror_us += mirrored.elapsed().as_micros() as u64;
+            #[cfg(feature = "diagnostics")]
+            {
+                mirror_us += mirrored.elapsed().as_micros() as u64;
+            }
             let Some(view) = view else {
                 continue;
             };
@@ -1418,9 +1484,13 @@ impl State {
             }
             // The copy the slot shows (`buffer_copy`), not the one the
             // view's range alone would find.
+            #[cfg(feature = "diagnostics")]
             let found = std::time::Instant::now();
             let copy = crate::descriptor::host::buffer_copy(&view);
-            copy_us += found.elapsed().as_micros() as u64;
+            #[cfg(feature = "diagnostics")]
+            {
+                copy_us += found.elapsed().as_micros() as u64;
+            }
             let Some((shadow, address, len)) = copy else {
                 continue;
             };
@@ -2038,11 +2108,13 @@ impl State {
         }
         fresh.sort_unstable();
         fresh.dedup();
+        let timed = Timer::now();
         for u in used.iter().filter(tables) {
             if !fresh.contains(&u.slot) {
                 self.table_entry(list, u, compute);
             }
         }
+        probe(0, timed);
         let mut made = Vec::new();
         for slot in fresh {
             let Some(&Root::Table(table)) = self.roots_ref(compute).get(usize::from(slot)) else {
@@ -2103,6 +2175,7 @@ impl State {
                     unsafe { (at as *const [u32; 3]).read_unaligned() }
                 })
                 .collect();
+            let timed = Timer::now();
             if let Some(first) = self.fresh_tables.find(table, &records) {
                 for u in entries.iter().filter(|u| u.kind != ResourceType::Cbv) {
                     let handle = table + u64::from(u.table_offset_dwords) * 4;
@@ -2122,6 +2195,7 @@ impl State {
                     }
                 }
                 made.push((slot, first * 32));
+                probe(1, timed);
                 continue;
             }
             let Some(first) = host.dynamic(n) else {
@@ -2152,7 +2226,9 @@ impl State {
                         host.constant_at(index, gpu, size);
                     }
                     Some(view) => {
+                        let making = Timer::now();
                         host.make_at(index, &view);
+                        probe(7, making);
                         let kind = used.map(|u| u.kind).or_else(|| {
                             selected.binary_search(&k).ok().and_then(|_| view_kind(&view))
                         });
@@ -2182,6 +2258,7 @@ impl State {
                 }
             }
             made.push((slot, first * 32));
+            probe(2, timed);
         }
         made
     }
@@ -2727,9 +2804,16 @@ fn depth_state(texture: &ID3D12Resource, desc: Option<&D3D12_DEPTH_STENCIL_VIEW_
 }
 
 fn readable(list: &HostList, kind: ResourceType, view: &View) {
+    let timed = Timer::now();
+    readable_inner(list, kind, view);
+    probe(3, timed);
+}
+
+fn readable_inner(list: &HostList, kind: ResourceType, view: &View) {
     const UNORDERED_ACCESS: u32 = 0x8;
     let placed = crate::descriptor::host::placed_texture(view);
     let view = placed.as_ref().unwrap_or(view);
+    let timed = Timer::now();
     // Buffer views read title memory: their range is copied at submission;
     // what shaders write through unordered access goes back to it after.
     if let Some((shadow, address, len)) = crate::descriptor::host::buffer_copy(view) {
@@ -2748,8 +2832,10 @@ fn readable(list: &HostList, kind: ResourceType, view: &View) {
             }
         }
     }
+    probe(4, timed);
     match (view, kind) {
         (View::Shader(resource, _), ResourceType::Srv) => {
+            let timed = Timer::now();
             // A view the title placed, in another format, in the memory of
             // a texture the host writes: that texture's texels, copied on
             // the host (title memory does not have them).
@@ -2761,6 +2847,8 @@ fn readable(list: &HostList, kind: ResourceType, view: &View) {
             {
                 crate::texture::upload(list, *resource as This, t);
             }
+            probe(5, timed);
+            let timed = Timer::now();
             // A depth texture shaders also write: what they wrote, first.
             list.twin_use(*resource as This, false, false);
             // The depth target the draw only tests is read in both ways at
@@ -2773,6 +2861,7 @@ fn readable(list: &HostList, kind: ResourceType, view: &View) {
                 SHADER_RESOURCE
             };
             crate::list::ensure_state(list, *resource as This, state);
+            probe(6, timed);
             #[cfg(feature = "diagnostics")]
             if let Some(t) = crate::resource::host_resource(*resource as This) {
                 // SAFETY: a live resource.

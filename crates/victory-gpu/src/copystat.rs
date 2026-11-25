@@ -1121,6 +1121,16 @@ pub(crate) fn log(frames: f64) {
             .map(|c| format!("list.rs:{} {:.0}x {:.1} ms", c.0, c.1 as f64 / frames, c.2 as f64 / 1e6 / frames))
             .collect();
         tracing::info!("  list calls by kind per frame: {}", top.join(", "));
+        let [tables, memory, views, uavs] = [0, 1, 2, 3]
+            .map(|i| crate::draw::BIND_PARTS[i].swap(0, Relaxed) as f64 / 1e6 / frames);
+        tracing::info!(
+            "  binding per frame: tables {tables:.1} ms, title memory by address {memory:.1} ms, user data and root views {views:.1} ms, root unordered views {uavs:.1} ms"
+        );
+        let p = [0, 1, 2, 3, 4, 5, 6, 7].map(|i| crate::draw::PROBES[i].swap(0, Relaxed) as f64 / 1e6 / frames);
+        tracing::info!(
+            "  tables per frame: from the title's slots {:.1} ms, fresh found made {:.1} ms, fresh made {:.1} ms (views made {:.1} ms); readable {:.1} ms: buffer copies {:.1} ms, texture uploads {:.1} ms, states {:.1} ms",
+            p[0], p[1], p[2], p[7], p[3], p[4], p[5], p[6]
+        );
     }
     tracing::info!(
         "recording per frame ({frames:.0} frames): {:.0} list calls {:.1} ms (all recording \
