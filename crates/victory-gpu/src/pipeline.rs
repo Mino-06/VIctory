@@ -145,7 +145,13 @@ impl Shader {
     pub(crate) fn translated(&self) -> Option<&Translated> {
         self.translated
             .get_or_init(|| {
+                let started = std::time::Instant::now();
                 let done = translate(&self.container);
+                let ms = started.elapsed().as_millis() as u64;
+                if ms >= 1000 {
+                    let bytes = self.container.len();
+                    tracing::info!(ms, stage = self.stage, hash = %self.hash, bytes, "slow shader translation");
+                }
                 // `VICTORY_SHADER_SAVE=<dir>`: each shader as the title gave it (`.cdxil`) and as
                 // translated (`.dxil`), by the hash crash reports name it with
                 if let Some(dir) = std::env::var_os("VICTORY_SHADER_SAVE") {

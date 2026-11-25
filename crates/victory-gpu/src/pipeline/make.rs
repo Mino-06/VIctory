@@ -62,8 +62,18 @@ impl Pending {
     }
 
     fn make(&self) {
-        self.made
-            .get_or_init(|| HostPipeline::new(&self.shaders, self.graphics.as_deref()));
+        self.made.get_or_init(|| {
+            let started = Instant::now();
+            let made = HostPipeline::new(&self.shaders, self.graphics.as_deref());
+            let took = started.elapsed();
+            // What holds a worker: the queue behind it waits as long.
+            if took >= Duration::from_secs(1) {
+                let shaders: Vec<_> =
+                    self.shaders.iter().map(|s| format!("{} {}", s.stage, s.hash)).collect();
+                tracing::info!(ms = took.as_millis() as u64, ?shaders, "slow host pipeline");
+            }
+            made
+        });
         let (lock, done) = &self.completion;
         let _held = lock.lock().unwrap_or_else(|e| e.into_inner());
         done.notify_all();
@@ -340,16 +350,31 @@ fn next() -> Arc<Pending> {
     }
 }
 
-/// Workers at work until the title draws a world.
-const MENU_WORKERS: usize = 2;
+/// Workers at work until the title draws a world: 2, or
+/// `VICTORY_MENU_WORKERS` (1 at least).
+fn menu_workers() -> usize {
+    static COUNT: OnceLock<usize> = OnceLock::new();
+    *COUNT.get_or_init(|| {
+        std::env::var("VICTORY_MENU_WORKERS")
+            .ok()
+            .and_then(|value| value.trim().parse::<usize>().ok())
+            .map_or(2, |count| count.max(1))
+    })
+}
+
 static WORLD: AtomicBool = AtomicBool::new(false);
+/// Wakes the workers that wait for the world.
+static WORLD_BEGAN: (Mutex<()>, Condvar) = (Mutex::new(()), Condvar::new());
 
 /// At every present, with the draws run on the host so far: a frame of many
 /// draws is the world's (menus run about ten).
 pub(crate) fn frame_drew(drawn: u64) {
     static LAST: AtomicU64 = AtomicU64::new(0);
-    if drawn.saturating_sub(LAST.swap(drawn, Ordering::Relaxed)) >= 60 {
-        WORLD.store(true, Ordering::Relaxed);
+    if drawn.saturating_sub(LAST.swap(drawn, Ordering::Relaxed)) >= 60
+        && !WORLD.swap(true, Ordering::Relaxed)
+    {
+        let _held = WORLD_BEGAN.0.lock().unwrap_or_else(|e| e.into_inner());
+        WORLD_BEGAN.1.notify_all();
     }
 }
 
@@ -378,8 +403,11 @@ fn workers() -> bool {
                     loop {
                         // All of them during the intro and the menus starve
                         // the title's threads: frames come unevenly.
-                        while i >= MENU_WORKERS && !WORLD.load(Ordering::Relaxed) {
-                            std::thread::sleep(Duration::from_millis(50));
+                        if i >= menu_workers() && !WORLD.load(Ordering::Relaxed) {
+                            let mut held = WORLD_BEGAN.0.lock().unwrap_or_else(|e| e.into_inner());
+                            while !WORLD.load(Ordering::Relaxed) {
+                                held = WORLD_BEGAN.1.wait(held).unwrap_or_else(|e| e.into_inner());
+                            }
                         }
                         next().make();
                         if WAITING.fetch_sub(1, Ordering::Relaxed) == 1 {

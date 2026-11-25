@@ -599,7 +599,7 @@ impl HostPipeline {
                     return None;
                 }
             };
-            tracing::info!(?shaders, "host pipeline");
+            tracing::debug!(?shaders, "host pipeline");
             #[cfg(feature = "diagnostics")]
             crate::shader_diag::record("ok", shaders, "compute");
             crate::host::name(&pso, || format!("{shaders:?}"));
@@ -816,7 +816,7 @@ impl HostPipeline {
                 return None;
             }
         };
-        tracing::info!(?shaders, "host pipeline");
+        tracing::debug!(?shaders, "host pipeline");
         #[cfg(feature = "diagnostics")]
         crate::shader_diag::record("ok", shaders, format_args!("graphics {state}"));
         crate::host::name(&pso, || format!("{shaders:?}"));
