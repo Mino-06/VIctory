@@ -16,6 +16,9 @@ Build with MSVC from PowerShell (Git Bash's `link` shadows MSVC's).
 | #346 | hand-resolved | copy marks; merged with #370's per-list taking; new copies count as marked |
 | #220 | hand-resolved | indirect windows 47.8 -> 1.15 ms GPU on the 3090 (PR's own bench) |
 | upstream #1843 | ported | typed-store check in `fits()` |
+| #387, #377, #354 | hand-resolved | wave32 lane masks, implicit reads |
+| #397 | hand-resolved | packed mesh outputs; `packed: false` elsewhere |
+| upstream #1845 | partial port | FreshTables |
 
 ## Bugs found and fixed
 
@@ -35,7 +38,11 @@ Build with MSVC from PowerShell (Git Bash's `link` shadows MSVC's).
 - upstream #1890 full port: depends on upstream lowering infrastructure.
 - Duplicates of merged PRs (f16 rounding x6, XGameSave x6, jobs 0 x4, ...).
 
-## Next (priority order)
+## Next
+
+See NEXT_STEPS.md. Rejected: #280 (duplicates #51/#52/#203).
+
+## Old next list
 
 1. Wave32 correctness PRs #354, #377, #387 (NVIDIA).
 2. #397 mesh 16-bit outputs (71 mesh shaders over 32 KiB).

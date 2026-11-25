@@ -1,0 +1,1142 @@
+﻿cargo :    Compiling victory-shader v0.1.0 (C:\Users\loune\code\victory-fork\crates\victory-shader)
+Au caractère Ligne:1 : 393
++ ... eline.txt"; cargo test --release --workspace --no-fail-fast 2>&1 | Ou ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling vi...victory-shader):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: unreachable pattern
+    --> crates\victory-shader\src\emit\lower.rs:8142:34
+     |
+7587 |             "v_permlanex16_b32" => {
+     |             ------------------- matches all the relevant values
+...
+8142 |             "v_permlane16_b32" | "v_permlanex16_b32" => {
+     |                                  ^^^^^^^^^^^^^^^^^^^ no value can reach this
+     |
+     = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+    --> crates\victory-shader\src\emit\lower.rs:8203:13
+     |
+8180 |             "v_cvt_f32_f64" => {
+     |             --------------- matches all the relevant values
+...
+8203 |             "v_cvt_f32_f64" => {
+     |             ^^^^^^^^^^^^^^^ no value can reach this
+
+warning: unreachable pattern
+    --> crates\victory-shader\src\emit\lower.rs:8411:13
+     |
+8411 |             "v_permlane16_b32" | "v_permlanex16_b32" => {
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+     |
+note: multiple earlier patterns match some of the same values
+    --> crates\victory-shader\src\emit\lower.rs:8411:13
+     |
+7587 |             "v_permlanex16_b32" => {
+     |             ------------------- matches some of the same values
+...
+8142 |             "v_permlane16_b32" | "v_permlanex16_b32" => {
+     |             ---------------------------------------- matches some of the same values
+...
+8411 |             "v_permlane16_b32" | "v_permlanex16_b32" => {
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ collectively making this unreachable
+
+warning: unused variable: `n`
+   --> crates\victory-shader\src\ir.rs:860:9
+    |
+860 |     let n = p.blocks.len();
+    |         ^ help: if this is intentional, prefix it with an underscore: `_n`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling victory-gpu v0.1.0 (C:\Users\loune\code\victory-fork\crates\victory-gpu)
+warning: unused import: `windows::core::s`
+  --> crates\victory-gpu\src\over.rs:65:9
+   |
+65 |     use windows::core::s;
+   |         ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `windows::core::s`
+   --> crates\victory-gpu\src\over.rs:282:9
+    |
+282 |     use windows::core::s;
+    |         ^^^^^^^^^^^^^^^^
+
+   Compiling victory-hle v0.1.0 (C:\Users\loune\code\victory-fork\crates\victory-hle)
+warning: `victory-shader` (lib) generated 4 warnings (run `cargo fix --lib -p victory-shader` to apply 1 suggestion)
+warning: linker stdout: Création de la bibliothèque 
+C:\Users\loune\code\victory-fork\target\release\examples\validate_dump.lib et de l'objet 
+C:\Users\loune\code\victory-fork\target\release\examples\validate_dump.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `victory-shader` (example "validate_dump") generated 1 warning
+warning: linker stdout: Création de la bibliothèque 
+C:\Users\loune\code\victory-fork\target\release\examples\wave_why.lib et de l'objet 
+C:\Users\loune\code\victory-fork\target\release\examples\wave_why.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `victory-shader` (example "wave_why") generated 1 warning
+warning: linker stdout: Création de la bibliothèque 
+C:\Users\loune\code\victory-fork\target\release\examples\lds_dump.lib et de l'objet 
+C:\Users\loune\code\victory-fork\target\release\examples\lds_dump.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `victory-shader` (example "lds_dump") generated 1 warning
+warning: `victory-gpu` (lib) generated 2 warnings (run `cargo fix --lib -p victory-gpu` to apply 2 suggestions)
+   Compiling victory v0.1.0 (C:\Users\loune\code\victory-fork\apps\victory)
+warning: linker stdout: Création de la bibliothèque 
+C:\Users\loune\code\victory-fork\target\release\deps\victory_shader-b6295128acf5492c.lib et de l'objet 
+C:\Users\loune\code\victory-fork\target\release\deps\victory_shader-b6295128acf5492c.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `victory-shader` (lib test) generated 5 warnings (4 duplicates)
+warning: linker stdout: Création de la bibliothèque 
+C:\Users\loune\code\victory-fork\target\release\deps\victory-6ec17537bc4700a7.lib et de l'objet 
+C:\Users\loune\code\victory-fork\target\release\deps\victory-6ec17537bc4700a7.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `victory` (bin "victory" test) generated 1 warning
+warning: `victory-gpu` (lib test) generated 2 warnings (2 duplicates)
+    Finished `release` profile [optimized + debuginfo] target(s) in 40.32s
+     Running unittests src\main.rs (target\release\deps\victory-6ec17537bc4700a7.exe)
+
+running 10 tests
+test doctor::tests::verdict_reports_low_ram ... ok
+test doctor::tests::verdict_reports_low_vram ... ok
+test doctor::tests::verdict_reports_missing_mesh ... ok
+test shader::tests::a_container_and_its_copy_with_a_tail_hash_the_same ... ok
+test doctor::tests::verdict_reports_ready ... ok
+test doctor::tests::verdict_reports_missing_sm66 ... ok
+test doctor::tests::verdict_reports_missing_avx2 ... ok
+test shader::tests::a_container_with_room_after_its_last_part_keeps_it ... ok
+test translate::tests::failure_dumps_share_slots_and_keep_distinct_reasons ... ok
+test run::tests::loader_lock_is_reentrant_and_exclusive ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src\lib.rs (target\release\deps\victory_core-712ac78f07bc1927.exe)
+
+running 13 tests
+test config::tests::environment_overrides_file ... ok
+test config::tests::empty_env_values_are_ignored ... ok
+test config::tests::empty_test_titles_env_is_ignored ... ok
+test config::tests::test_titles_env_splits_paths ... ok
+test config::tests::example_config_parses ... ok
+test config::tests::cache_inside_repo_is_refused ... ok
+test config::tests::data_inside_repo_is_refused ... ok
+test policy::tests::rejects_dotdot_escapes_back_into_repo ... ok
+test policy::tests::rejects_paths_inside_this_repo ... ok
+test config::tests::unreadable_implicit_config_is_not_silently_ignored ... ok
+test policy::tests::accepts_unrelated_directories ... ok
+test policy::tests::rejects_other_clones_via_marker ... ok
+test config::tests::missing_implicit_config_is_optional_but_explicit_is_required ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\lib.rs (target\release\deps\victory_formats-7784ef5f694a178f.exe)
+
+running 33 tests
+test bcpack::tests::bcpack_throughput ... ignored, benchmark
+test bcpack::tests::reference_chunks ... ignored, needs the format tables and reference chunks
+test bcpack::tests::bc7_dictionary_indices_line_up ... ok
+test bcpack::tests::bc7_mode6_block ... ok
+test bcpack::tests::bc7_first_dictionary_entry_keeps_all_32_indices ... ok
+test texture::tests::bad_descriptions_and_buffers_are_refused ... ok
+test texture::tests::detile_threads ... ignored, benchmark
+test texture::tests::depth_stencil_is_two_planes ... ok
+test bcpack::tests::the_shipped_tables_parse ... ok
+test bcpack::tests::bc4_blocks_with_and_without_references ... ok
+test texture::tests::blocks_hold_their_size_in_elements ... ok
+test texture::tests::hand_checked_addresses ... ok
+test texture::tests::extents_past_the_hardware_limit_are_invalid ... ok
+test texture::tests::mip_tail_comes_first ... ok
+test texture::tests::texture_copies_reject_overflowing_pitches ... ok
+test texture::tests::volume_copy_rejects_overflowing_depth_pitch ... ok
+test texture::tests::texture_mip_count_is_bounded_by_spatial_extent ... ok
+test xma::tests::a_zero_length_frame_before_the_start_ends_the_search ... ok
+test bcpack::tests::malformed_input_is_an_error ... ok
+test xma::tests::matches_a_reference_decoder ... ignored, needs reference files outside the repository
+test xma::tests::frame_starts_must_be_inside_packet_payloads ... ok
+test xma::tests::walks_saved_streams ... ignored, needs streams outside the repository
+test xma::tests::packet_rejects_out_of_range_indices_and_partial_headers ... ok
+test xma::tests::packet_headers_and_frame_walk ... ok
+test bcpack::tests::lanes_take_bytes_in_schedule_order_and_long_fragments ... ok
+test xma::tests::fast_imdct_matches_the_direct_sum ... ok
+test texture::tests::bands_detile_as_the_whole ... ok
+test texture::tests::addresses_are_a_bijection_and_copies_round_trip ... ok
+test xma::tests::imdct_and_window_reconstruct_a_signal ... ok
+test bcpack::tests::noise_never_panics ... ok
+test bcpack::tests::every_layout_round_trips_through_the_lanes ... ok
+test bcpack::tests::bucket_lookup_matches_a_scan_of_the_starts ... ok
+test bcpack::tests::payload_step_matches_the_reference_decode ... ok
+
+test result: ok. 28 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+     Running unittests src\lib.rs (target\release\deps\victory_game-182bbe210cf058f7.exe)
+
+running 3 tests
+test sgd5::tests::corrupt_stream_does_not_unpack ... ok
+test sgd5::tests::reads_records ... ok
+test sgd5::tests::handles_empty_and_rejects_mismatched_or_truncated_streams ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\release\deps\victory_gpu-ffe407e71e7d0783.exe)
+
+running 186 tests
+test descriptor::host::tests::a_structured_view_made_raw_passes_the_host_check ... ok
+test descriptor::host::tests::a_limited_texture_pass_keeps_the_full_queue_priority_and_counts ... ok
+test descriptor::host::tests::a_newer_view_of_other_memory_makes_the_older_stale ... ok
+test descriptor::host::tests::eviction_takes_the_oldest_made_slots_and_spares_the_recent ... ok
+test descriptor::host::tests::null_uavs_keep_the_titles_dimension ... ok
+test descriptor::host::tests::views_of_one_placed_texture_are_told_by_address_and_description ... ok
+test descriptor::host::tests::the_texture_queue_serves_the_newest_writes_first ... ok
+test descriptor::tests::heaps_hold_count_descriptors_from_their_start ... ok
+test descriptor::host::tests::directly_indexed_buffer_ranges_follow_the_heap_lifetime ... ok
+test descriptor::host::tests::views_off_their_copys_elements_are_told_apart ... ok
+test descriptor::tests::placed_heaps_start_at_the_title_memory ... ok
+test descriptor::tests::constant_buffer_staging_uses_only_the_host_addressable_prefix ... ok
+test descriptor::tests::constant_views_fit_their_records ... ok
+test descriptor::tests::raw_heap_sync_stops_before_dynamic_host_slots ... ok
+test descriptor::tests::shader_slot_retains_heap_across_title_release ... ok
+test descriptor::tests::views_die_with_their_resource ... ok
+test descriptor::tests::views_survive_copies ... ok
+test device::tests::creation_hands_out_the_device ... ok
+test device::tests::feature_levels_pick_the_highest_supported ... ok
+test device::tests::newer_device_levels_are_the_same_device ... ok
+test device::tests::the_device_is_found_at_every_level_through_others ... ok
+test device::tests::virtual_memory_configuration_reports_user_space ... ok
+test draw::tests::staging_budget_scales_with_vram_budget ... ok
+test dxgi::tests::adapter2_describes_the_console_adapter ... ok
+test dxc::tests::a_root_signature_belongs_to_the_entry_it_sits_on ... ok
+test dxgi::tests::startup_walks_from_device_to_output ... ok
+test fence::tests::signals_set_waiting_events ... ok
+test host::batch::a_texture_is_checked_once_per_submission ... ok
+test host::batch::ram_idle_ms_scales_with_pressure ... ok
+test host::batch::spare_most_scales_with_ram ... ok
+test descriptor::tests::views_at_new_addresses_add_no_entries ... ok
+test host::batch::texture_checks_per_submission ... ignored, benchmark
+test host::batch::title_writes_make_textures_due_again ... ok
+test host::batch::vram_idle_ms_scales_with_pressure ... ok
+test host::late_tests::copies_join_only_end_to_end_and_apart ... ok
+test host::late_tests::ranges_touch_where_they_overlap ... ok
+test host::relay_tests::a_piece_flagged_under_one_range_is_fetched_under_all ... ok
+test host::relay_tests::flights_land_in_the_order_they_were_sent ... ok
+test host::relay_tests::refreshes_wait_only_for_writes_from_another_copy_or_readback ... ok
+test host::spare::kept_things_come_back_by_size_within_the_limit ... ok
+test host::tests::benchmark_direct_copy_vs_kernel_calls ... ignored, benchmark
+test host::tests::sparse_copies_preserve_islands_and_observe_remaps ... ok
+test host::tests::warp_adapter_accepts_only_software ... ok
+test host::tests::write_mapped_skips_unmapped_and_readonly_pages_and_marks_write_watch ... ok
+test host::trail::the_removal_report_says_the_newest_things_done ... ok
+test host::wide_refresh_tests::parallel_refresh_is_default_on_multicore_and_can_be_overridden ... ok
+test dxc::tests::a_shader_that_asks_for_no_root_signature_compiles ... ok
+test indirect::tests::only_an_execution_of_no_records_ends_early ... ok
+test indirect::tests::parse_clamp_enabled_defaults_on_and_respects_explicit_disable ... ok
+test indirect::tests::rejects_unaligned_or_undersized_layouts ... ok
+test indirect::tests::validate_layout_rejects_misaligned_or_overflowing_direct_arguments ... ok
+test dxc::tests::a_shader_the_system_compiler_refuses_is_compiled_by_dxc ... ok
+test indirect::tests::warp_budget_saturates_without_wraparound_and_preserves_draw_fields ... ok
+test device::tests::the_hosts_children_hand_out_newer_device_levels ... ok
+test indirect::tests::argument_clamp_builds ... ok
+test inplace::tests::aligned_span_rounds_to_64k_and_rejects_overflow ... ok
+test inplace::tests::budget_reserve_enforces_its_limit_under_threads ... ok
+test inplace::tests::census_tells_private_memory_from_views ... ok
+test inplace::tests::late_waits_refuse_every_placement_and_count_it ... ok
+test inplace::tests::only_private_memory_committed_whole_is_a_part ... ok
+test inplace::tests::remapped_memory_forgets_its_views ... ok
+test inplace::tests::views_say_what_one_placed_buffer_could_show ... ok
+test inplace::tests::warp_a_title_buffer_in_place_shows_its_bytes_at_its_offset ... ok
+test inplace::tests::warp_place_part_refuses_a_span_past_the_address_space ... ok
+test inplace::tests::warp_probe_opens_title_like_memory_and_the_gpu_sees_its_bytes ... ok
+test indirect::tests::warp_window_leaves_unfilled_slots_empty_and_uncharged ... ok
+test list::tests::every_inline_command_falls_back_to_the_table ... ok
+test indirect::tests::host_list_reuses_and_grows_scratch_across_submissions ... ok
+test list::tests::idle_most_scales_with_ram_and_cores ... ok
+test object::tests::guids_round_trip_through_text ... ok
+test over::tests::the_stretch_writes_inside_its_target_only ... ok
+test over::tests::typeless_formats_get_their_typed_one ... ok
+test pipeline::host::tests::a_description_s_padding_is_zero_whatever_the_title_left_in_it ... ok
+test pipeline::host::tests::a_mesh_pipeline_loads_from_the_library ... ok
+test pipeline::host::tests::blend_states_without_integer_blending_are_kept ... ok
+test pipeline::host::tests::integer_targets_do_not_blend ... ok
+test pipeline::library::tests::a_rejected_blob_gives_an_empty_library ... ok
+test pipeline::library::tests::names_change_with_what_goes_into_the_pipeline ... ok
+test pipeline::library::tests::restart_reads_the_latest_save_after_using_the_fallback ... ok
+test pipeline::library::tests::restart_reads_the_latest_save_while_replacement_is_blocked ... ok
+test indirect::tests::warp_card_compare_stores_the_hash_it_made_when_told ... ok
+test pipeline::make::tests::draws_promote_early_pipelines_without_claiming_them_twice ... ok
+test pipeline::make::tests::first_use_is_made_by_a_worker ... ok
+test pipeline::make::tests::old_frame_cannot_reset_newer_budget ... ok
+test pipeline::library::tests::the_library_file_is_mapped_and_replaced ... ok
+test pipeline::make::tests::shared_reservations_do_not_overbook ... ok
+test pipeline::make::tests::speculative_pipelines_come_last_and_can_be_promoted ... ok
+test pipeline::tests::pipelines_keep_their_shaders ... ok
+test pipeline::tests::skip_hashes_accepts_full_hashes_only ... ok
+test pipeline::tests::streams_yield_their_shaders ... ok
+test pipeline::tests::truncated_and_unaligned_streams_do_not_read_out_of_bounds ... ok
+test primitive::tests::elements_past_the_stride_are_left_alone ... ok
+test primitive::tests::half_corners_round_ties_to_even_and_keep_nan ... ok
+test primitive::tests::half_subnormals_convert_in_both_directions ... ok
+test primitive::tests::halves_round_up_into_the_next_power_of_two ... ok
+test primitive::tests::rectangles_get_their_fourth_corner ... ok
+test query::tests::occlusion_query_type_maps_only_occlusion_kinds ... ok
+test query::tests::resolve_range_valid_rejects_empty_and_overflow ... ok
+test frame::tests::concurrent_flip_retry_does_not_extend_timeout ... ok
+test queue::plane_tests::the_second_plane_is_chosen_only_when_it_names_another_resource ... ok
+test queue::tests::console_queues_are_created_as_on_pc ... ok
+test queue::tests::newer_queues_have_their_methods_two_slots_later ... ok
+test queue::tests::present_runs_ready_fence_producer_before_blocked_consumer ... ok
+test queue::tests::queue_signals_complete_at_once ... ok
+test queue::tests::timestamps_and_values_are_written ... ok
+test pipeline::library::tests::a_replaced_library_file_still_reads_from_the_disk ... ok
+test frame::tests::concurrent_flip_waits_consume_distinct_ticks ... ok
+test frame::tests::waits_end_on_ticks_and_count_frames ... ok
+test resource::tests::committed_and_placed_resources_map_at_their_gpu_address ... ok
+test resource::tests::device_setup_heap_properties_and_resources_at_addresses ... ok
+test resource::tests::heaps_are_zeroed_aligned_memory ... ok
+test resource::tests::host_texture_drops_unsupported_uav_and_rt_flags ... FAILED
+test resource::tests::sizes_cover_every_mip ... ok
+test resource::tests::texture_floor_scales_with_vram_budget ... ok
+test resource::tests::upload_footprints_follow_the_pc_rules ... ok
+test root::tests::host_serialized_blobs_create_root_signatures ... ok
+test root::tests::our_blobs_deserialize_on_the_host ... ok
+test root::tests::versioned_descriptions_serialize_on_the_host ... ok
+test sampler::tests::console_descriptions_decode ... ok
+test shader_cache::tests::entries_round_trip_and_reject_damage ... ok
+test shader_cache::tests::reopening_the_cache_preserves_each_host_wave_translation ... ok
+test shader_cache::tests::translations_come_back_from_the_cache ... ok
+test shadow::card_tests::piece_runs_join_without_losing_or_adding_pieces ... ok
+test shadow::card_tests::ranges_join_where_they_touch ... ok
+test shadow::card_tests::the_shader_and_the_merge_cut_the_same_pieces ... ok
+test shadow::difference_tests::differences_are_found_as_byte_by_byte ... ok
+test shadow::difference_tests::differences_ignore_bytes_past_the_shorter_slice ... ok
+test shadow::exact_tests::a_views_own_copy_holds_exactly_its_bytes ... ok
+test resource::tests::buffer_data_reaches_the_host_texture ... ok
+test shadow::merge_tests::changed_runs_are_exactly_the_bytes_that_differ ... ok
+test shadow::piece_tests::pieces_cover_the_copy_as_the_compare_cuts_it ... ok
+test descriptor::tests::records_copied_as_bytes_are_made_at_the_next_sync ... ok
+test shadow::relay_merge_simd::tests::cpu_only_changes_do_not_enter_the_reference ... ok
+test shadow::merge_tests::a_piece_put_back_reads_only_its_stretch ... ok
+test shadow::relay_merge_simd::tests::mismatched_lengths_keep_original_zip_behavior ... ok
+test shadow::relay_tests::a_range_stays_closed_until_every_flight_that_declared_it_is_done ... ok
+test shadow::relay_tests::ranges_are_cut_out ... ok
+test shadow::relay_tests::stale_pages_include_uncopied_pages_absent_from_write_watch ... ok
+test shadow::relay_tests::the_merge_stores_only_what_the_card_changed ... ok
+test shadow::relay_tests::title_bytes_not_yet_on_the_card_are_not_taken_for_shader_writes ... ok
+test shadow::relay_tests::two_flights_overlapping_ranges_and_a_cpu_write_in_between ... ok
+test shadow::wide_tests::all_jobs_run_before_wide_returns ... ok
+test shadow::wide_tests::copies_cut_into_jobs_copy_the_same_bytes ... ok
+test shadow::window_tests::an_ask_takes_the_longest_window_that_holds_it ... ok
+test shadow::window_tests::card_limits_scale_with_local_vram_budget ... ok
+test shadow::wide_tests::pieces_found_wide_are_those_found_one_by_one ... ok
+test shadow::window_tests::overlapping_windows_cover_their_memory_once ... ok
+test shadow::window_tests::snapshot_pool_cap_scales_with_ram ... ok
+test shadow::window_tests::tails_run_to_the_cells_end_and_the_longest_is_taken ... ok
+test shadow::window_tests::the_grid_is_a_power_of_two_or_the_default ... ok
+test shadow::window_tests::windows_hold_their_ask_on_the_grid ... ok
+test texture::detile_tests::detile_in_bands ... ignored, benchmark
+test resource::tests::a_depth_texture_and_its_twin_copy_into_each_other ... ok
+test texture::title_memory_tests::a_kernel_texture_read_requires_every_page_while_remapping ... ok
+test texture::title_memory_tests::an_uncommitted_tail_reads_as_zeros ... ok
+test texture::title_memory_tests::partial_poll_throttle_does_not_hide_new_writes ... ok
+test texture::title_memory_tests::skipped_zero_partial_read_does_not_replace_staged_hash ... ok
+test indirect::tests::warp_count_buffer_ignores_garbage_tail_and_preserves_source ... ok
+test texture::title_memory_tests::the_small_texture_of_runs_72_and_73_detiles_the_same_both_ways ... ok
+test descriptor::host::tests::slots_read_through_tables_leave_the_texture_queue ... ok
+test shadow::relay_merge_simd::tests::all_alignments_and_tails_match_scalar ... ok
+test watch::tests::a_range_that_begins_in_an_unmapped_block_is_guarded ... ok
+test watch::tests::a_runtime_write_into_physical_pages_is_reported_at_the_views ... ok
+test watch::tests::a_view_mapped_beside_a_guarded_one_makes_it_check_again ... ok
+test watch::tests::a_write_through_another_view_is_reported_at_the_guarded_one ... ok
+test watch::tests::kernel_reads_into_guarded_blocks_after_opening ... ok
+test watch::tests::ranges_past_the_address_space_end_do_not_overflow ... ok
+test watch::tests::unmapped_blocks_are_reported_once_until_mapped ... ok
+test descriptor::host::tests::remapped_memory_makes_its_texture_slots_due ... ok
+test watch::tests::writes_in_partly_committed_view_blocks_are_reported ... ok
+test watch::tests::written_pages_are_reported_to_every_asker ... ok
+test watch::wrote_tests::wrote_keeps_ahead_asked_at_or_above_written_timestamps ... ok
+test descriptor::host::tests::null_3d_uav_is_accepted_by_the_device ... ok
+test descriptor::host::tests::dynamic_slots_are_held_until_released ... ok
+test descriptor::host::tests::a_typed_view_off_its_copys_elements_gets_its_own_copy ... ok
+test descriptor::host::tests::an_oversized_constant_buffer_view_leaves_the_device_alive ... ok
+test list::tests::a_depth_stencil_uav_barrier_names_both_twins ... ok
+test descriptor::host::tests::placed_unordered_texture_view_mirrors_and_aliases_to_shader_view ... ok
+test texture::title_memory_tests::two_lists_in_one_submission_do_not_drop_the_next_upload ... ok
+test texture::title_memory_tests::a_changed_texture_uploads_on_the_same_submission ... ok
+test resource::tests::a_stencil_planes_twin_reaches_the_plane ... ok
+test resource::tests::a_depth_planes_twin_is_drawn_into_the_plane ... ok
+test watch::mapping_tests::reads_and_remappings_of_other_bytes_go_on ... ok
+test texture::detile_tests::a_texture_detiled_in_bands_is_the_one_detiled_whole ... ok
+test watch::mapping_tests::reads_in_place_and_remappings_wait_for_each_other ... ok
+test pipeline::make::tests::pending_pipeline_is_recorded_for_the_next_launch ... ok
+
+failures:
+
+---- resource::tests::host_texture_drops_unsupported_uav_and_rt_flags stdout ----
+
+thread 'resource::tests::host_texture_drops_unsupported_uav_and_rt_flags' (22648) panicked at crates\victory-gpu\src\resource.rs:3659:9:
+assertion `left == right` failed
+  left: 4
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    resource::tests::host_texture_drops_unsupported_uav_and_rt_flags
+
+test result: FAILED. 182 passed; 1 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.80s
+
+error: test failed, to rerun pass `-p victory-gpu --lib`
+     Running unittests src\lib.rs (target\release\deps\victory_hle-f68f471cf211e5e6.exe)
+
+running 127 tests
+test modules::audio::tests::full_message_queues_count_drops ... ok
+test modules::audio::tests::heap_maps_every_byte_of_a_block ... ok
+test modules::audio::tests::heap_reuses_freed_addresses ... ok
+test modules::d3d12x::tests::the_interface_id_import_is_bound_to_data ... ok
+test modules::display::tests::sdr_and_display_deferrals ... ok
+test modules::dsp::tests::convolution_stream_as_the_title_drives_it ... ok
+test modules::dstorage::tests::a_refused_factory_interface_clears_the_out_pointer ... ok
+test modules::dstorage::tests::a_status_waits_for_every_earlier_read ... ok
+test modules::audio::tests::startup_as_fmod_does_it ... ok
+test modules::audio::tests::loop_end_keeps_current_samples_and_defers_loop_start_skip ... ok
+test modules::dstorage::tests::request_layout_is_the_titles ... ok
+test modules::dstorage::tests::staging_bounds_compressed_bytes_in_flight ... ok
+test modules::audio::tests::xma_contexts_decode_into_their_output_rings ... ok
+test modules::audio::tests::pump_keeps_decoding_across_empty_steps_without_injecting_silence ... ok
+test modules::dstorage::tests::priorities_share_by_bytes_about_tenfold ... ok
+test modules::ffx::tests::a_dispatch_nothing_answers_is_an_error ... ok
+test modules::ffx::tests::the_upscale_description_is_laid_out_as_the_public_api ... ok
+test modules::dstorage::tests::zlib_inflate_handles_short_exact_empty_and_bad_streams ... ok
+test modules::apu::tests::decodes_opus_as_the_title_drives_it ... ok
+test modules::gameinput::hid::tests::a_dualsense_on_bluetooth_reads_in_both_report_forms ... ok
+test modules::dstorage::tests::physical_page_destinations ... ok
+test modules::dstorage::tests::memory_sources_inflate_too ... ok
+test modules::gameinput::hid::tests::a_dualsense_on_usb_reads_as_a_console_pad ... ok
+test modules::gameinput::hid::tests::a_dualshock_4_reads_on_usb_and_bluetooth ... ok
+test modules::gameinput::hid::tests::connected_hid_pads ... ignored, needs a pad: cargo test -p victory-hle connected_hid_pads -- --ignored --nocapture
+test modules::gameinput::hid::tests::a_generic_pad_maps_by_the_directinput_layout ... ok
+test modules::gameinput::hid::tests::a_generic_pad_with_six_axes_has_analogue_triggers ... ok
+test modules::gameinput::hid::tests::rumble_reports_put_the_motors_where_sony_reads_them ... ok
+test modules::gameinput::hid::tests::sony_pads_are_known_by_vendor_and_product ... ok
+test modules::gameinput::hid::tests::the_button_map_can_be_named ... ok
+test modules::gameinput::hid::tests::the_crc_is_ieee_crc_32 ... ok
+test modules::files::tests::kernel_reads_reach_the_buffer ... ok
+test modules::dstorage::tests::zlib_into_pages_in_place_and_across_allocations ... ok
+test modules::files::tests::rewrites_only_paths_on_mounted_drives ... ok
+test modules::gameinput::hid::tests::values_normalise_over_their_range ... ok
+test modules::gameinput::host::host_pads_convert_to_console_pads ... ok
+test modules::gameinput::tests::async_enumeration_waits_for_the_poll_and_unregistering_stops_callbacks ... ok
+test modules::gameinput::tests::devices_are_found_by_id_and_rumble_reaches_the_host ... ok
+test modules::gameinput::tests::keyboard_supplements_first_connected_pad_and_releases_cleanly ... ok
+test modules::gameinput::tests::keys_feed_the_keyboard_and_the_stand_in_pad ... ok
+test modules::gameinput::tests::ordinal_one_resolves_to_create ... ok
+test modules::kernel::tests::a_missing_export_of_our_modules_sets_the_last_error ... ok
+test modules::kernel::tests::host_lookups_by_name_get_our_overrides ... ok
+test modules::kernel::tests::title_dlls_and_pseudo_modules_are_found_by_name ... ok
+test modules::kernel::tests::title_images_report_their_original_path ... ok
+test modules::dstorage::tests::half_a_queue_submits_itself ... ok
+test modules::files::tests::narrow_paths_are_rewritten_once ... ok
+test modules::lifecycle::tests::configured_window_limit_fits_4k_into_1080p ... ok
+test modules::lifecycle::tests::configured_window_limit_preserves_non_widescreen_proportions ... ok
+test modules::lifecycle::tests::configured_window_limit_still_respects_the_work_area ... ok
+test modules::lifecycle::tests::oversized_windows_shrink_to_the_screen ... ok
+test modules::lifecycle::tests::registrations_come_and_go ... ok
+test modules::files::tests::long_title_paths_work_on_the_host ... ok
+test modules::lifecycle::tests::window_limit_requires_two_positive_dimensions ... ok
+test modules::media::tests::interface_ids_are_the_resolvers ... ok
+test modules::speech::tests::streams_are_empty_wave_files ... ok
+test modules::xasync::tests::a_nonnegative_completion_still_returns_its_payload ... ok
+test modules::xasync::tests::async_calls_complete_and_return_results ... ok
+test modules::xasync::tests::manual_ports_run_callbacks_when_dispatched ... ok
+test modules::xasync::tests::run_returns_the_work_result ... ok
+test modules::gameinput::tests::pads_connect_report_and_disconnect ... ok
+test modules::files::tests::title_file_calls_land_in_the_host_folder ... ok
+test modules::xasync::tests::terminate_cancels_what_is_queued ... ok
+test modules::xg::tests::bad_descriptions_fail ... ok
+test modules::xg::tests::element_offsets_follow_the_layout ... ok
+test modules::xasync::tests::pool_callbacks_may_wait_for_each_other ... ok
+test modules::storage::tests::serves_a_drive_over_the_title_folder_and_its_quota ... ok
+test modules::xg::tests::suggestions_follow_the_use ... ok
+test modules::xgame::tests::a_relaunch_keeps_our_options ... ok
+test modules::xg::tests::layout_and_copies_through_the_object ... ok
+test modules::xgame::tests::served_areas_are_available_others_not ... ok
+test modules::xgameruntime::tests::title_stub_loads_the_runtime_dynamically ... ok
+test modules::xgamesave::tests::a_full_disk_is_not_the_quota ... ok
+test modules::media::tests::only_local_files_reach_the_host ... ok
+test modules::net::tests::only_loopback_is_reachable ... ok
+test modules::xgamesave::tests::crash_child ... ok
+test modules::dstorage::tests::zlib_then_bcpack ... ok
+test modules::dstorage::tests::statuses_complete_in_order_with_the_first_failure ... ok
+test modules::dstorage::tests::bcpack_requests_unpack_into_the_destination ... ok
+test modules::xgameui::tests::text_entry_defaults_to_1024_characters ... ok
+test modules::xgameui::tests::dialogs_end_with_what_was_typed ... ok
+test modules::xmem::tests::alloc_honours_alignment_and_frees ... ok
+test modules::dstorage::tests::raw_and_zlib_reads_from_a_file ... ok
+test modules::xmem::tests::commit_limit_report_includes_request_and_system_commit ... ok
+test modules::xmem::tests::mapping_no_pages_changes_nothing ... ok
+test modules::xmem::tests::map_alias_handles_overlapping_ranges_and_missing_sources ... ok
+test modules::xmem::tests::page_windows_cover_one_run_in_place ... ok
+test modules::lifecycle::tests::wm_close_and_sc_close_are_intercepted_before_the_title ... ok
+test modules::lifecycle::tests::the_keyboard_menu_never_reaches_the_title ... ok
+test modules::lifecycle::tests::hooked_windows_still_reach_the_title_procedure ... ok
+test modules::xmem::tests::scatter_unmap_groups_only_safe_increasing_zero_pages ... ok
+test modules::xmem::tests::statistics_have_the_console_layout ... ok
+test modules::xmem::tests::transfers_shrink_the_title_budget ... ok
+test modules::xmem::tests::virtual_alloc_meets_console_constraints ... ok
+test modules::xmem::tests::physical_pages_map_alias_and_unmap ... ok
+test modules::xnetworking::tests::offline_but_initialized ... ok
+test modules::xpackage::tests::the_installation_is_complete_and_alone ... ok
+test modules::xstore::tests::the_game_is_licensed_and_the_store_is_offline ... ok
+test modules::xmem::tests::scatter_unmaps_adjacent_pages_and_stops_at_null_address ... ok
+test modules::xsystem::device_type::tests::other_keys_reach_the_host ... ok
+test modules::xsystem::device_type::tests::titles_read_the_chosen_model ... ok
+test modules::xsystem::tests::analytics_info_comes_back_through_the_buffer ... ok
+test modules::xsystem::tests::identity_strings_fit_the_documented_sizes ... ok
+test modules::xmem::tests::runs_group_consecutive_pages_of_one_allocation ... ok
+test modules::xsystem::tests::the_console_id_is_the_documented_retail_value ... ok
+test modules::xuser::tests::a_gamertag_without_a_suffix_has_an_empty_modern_suffix ... ok
+test modules::xuser::tests::startup_adds_the_user_and_reads_its_id ... ok
+test registry::tests::api_set_prefix_matching ... ok
+test registry::tests::export_names_are_unique_per_dll_pattern ... ok
+test runtime::tests::reads_title_id_store_id_and_storage_quota ... ok
+test tests::console_api_resolves_to_hle ... ok
+test tests::overrides_win_over_host ... ok
+test tests::shared_api_sets_pass_through_to_host ... ok
+test tests::strict_policy_reports_missing ... ok
+test modules::xmem::tests::writes_cross_runs_and_allocations ... ok
+test modules::xmem::tests::remapping_contiguous_run_over_fragmented_placeholders_succeeds ... ok
+test modules::xmem::tests::a_read_in_place_never_meets_the_gap_of_a_remapping ... ok
+test modules::dstorage::tests::a_closed_queue_completes_nothing ... ok
+test modules::gameinput::tests::unregistering_waits_for_a_running_callback ... ok
+test modules::xgamesave::tests::the_old_layout_moves_over ... ok
+test modules::xgamesave::tests::an_unreadable_old_blob_is_not_dropped ... ok
+test modules::xgamesave::tests::saves_persist_across_providers ... ok
+test modules::xgamesave::tests::names_are_exact ... ok
+test modules::xgamesave::tests::an_empty_configuration_id_is_the_default_one ... ok
+test modules::xasync::tests::terminate_ends_a_waiting_dispatch ... ok
+test modules::xgamesave::tests::a_kill_at_any_step_leaves_old_or_new ... ok
+test modules::xasync::tests::terminate_cancels_a_callback_still_on_its_delay ... ok
+
+test result: ok. 126 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running tests\no_dll_planting.rs (target\release\deps\no_dll_planting-ab887d209a94cc3f.exe)
+
+running 1 test
+test ignores_dlls_in_current_folder ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\xasync_task_queue.rs (target\release\deps\xasync_task_queue-d40883d624d3638a.exe)
+
+running 1 test
+test begin_without_any_queue_reports_no_task_queue ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\release\deps\victory_loader-46087e2e56e312db.exe)
+
+running 25 tests
+test console_insn::decode::tests::decodes_the_console_only_instructions ... ok
+test console_insn::tests::clzero_loop_handles_aligned_unaligned_empty_and_eflags ... ok
+test console_insn::decode::tests::sse4a_bit_fields ... ok
+test crash::tests::clwb_lengths ... ok
+test crash::tests::clwb_loops ... ok
+test crash::tests::clzero_zeroes_its_line_on_any_cpu ... ok
+test crash::tests::emulated_clzero_zeroes_its_line ... ok
+test crash::tests::other_instructions_and_exceptions_are_not_emulated ... ok
+test crash::tests::memory_at_names_what_an_access_hit ... ok
+test crash::tests::emulated_insertq_and_extrq_with_immediates ... ok
+test crash::tests::emulated_monitorx_and_mwaitx_are_skipped ... ok
+test crash::tests::emulated_sse4a_length_0_is_64_bits ... ok
+test crash::tests::emulated_insertq_and_extrq_with_fields_in_a_register ... ok
+test crash::tests::emulated_sse4a_reaches_xmm8_to_xmm15 ... ok
+test crash::tests::unwinds_like_the_system_walk ... ok
+test crash::tests::instruction_bytes_stop_at_the_end_of_their_page ... ok
+test threads::tests::exit_child ... ok
+test thunks::tests::trap_child ... ok
+test tls::tests::loads_become_calls_that_yield_the_title_slot ... ok
+test prepare::tests::keeps_iat_slots_when_import_size_excludes_the_terminator ... ok
+test prepare::tests::patches_own_test_binary ... ok
+test prepare::tests::file_name_is_stable_per_build ... ok
+test prepare::tests::windows_assigns_static_tls_to_a_prepared_dll ... ok
+test threads::tests::exit_ends_the_other_threads_first ... ok
+test thunks::tests::a_trapped_import_is_in_the_crash_log ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.69s
+
+     Running tests\load_probe.rs (target\release\deps\load_probe-8005e80621f76a85.exe)
+
+running 2 tests
+test maps_a_title_dll_the_title_loads_itself ... ok
+warning: linker stdout: Création de la bibliothèque 
+C:\Users\loune\code\victory-fork\target\tmp\hle-probe\debug\deps\hle_probe.dll.lib et de l'objet 
+C:\Users\loune\code\victory-fork\target\tmp\hle-probe\debug\deps\hle_probe.dll.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+test loads_binds_and_calls_probe ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests\title_dlls.rs (target\release\deps\title_dlls-221230daf45e3d87.exe)
+
+running 3 tests
+test a_title_dll_that_does_not_prepare_is_named ... ok
+test a_folder_spelled_like_a_title_dll_does_not_hide_it ... ok
+test a_title_dll_in_a_case_sensitive_folder_is_found_by_any_spelling ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running unittests src\lib.rs (target\release\deps\victory_pe-bae25b2cf804d2ba.exe)
+
+running 7 tests
+test layout::tests::reads_reject_overflowing_offsets ... ok
+test image::tests::unused_export_slots_are_not_exports ... ok
+test image::tests::parses_own_test_binary ... ok
+test image::tests::rva_to_file_offset_rejects_offsets_past_4_gib ... ok
+test image::tests::rejects_garbage_without_panicking ... ok
+test image::tests::rejects_iat_outside_image ... ok
+test image::tests::rva_to_file_offset_maps_entry_point ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\release\deps\victory_pipeline-05e5bc859178b130.exe)
+
+running 4 tests
+test cache::tests::version_bump_invalidates ... ok
+test cache::tests::refuses_cache_inside_repo ... ok
+test cache::tests::converts_once_then_hits ... ok
+test cache::tests::failed_publication_removes_the_staging_file ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\release\deps\victory_shader-b6295128acf5492c.exe)
+
+running 282 tests
+test bvh::tests::a_box_switched_off_and_a_missing_child_return_none ... ok
+test bvh::tests::a_ray_through_a_shared_edge_misses_neither_triangle ... ok
+test bvh::tests::a_triangle_is_missed_beside_behind_and_edge_on ... ok
+test bvh::tests::axis_aligned_rays_and_origins_on_a_face_make_no_nan ... ok
+test bvh::tests::a_triangle_returns_distance_and_weights_over_one_denominator ... ok
+test bvh::tests::instances_and_procedural_nodes_return_a_triangle_miss ... ok
+test bvh::tests::equal_distances_keep_child_order ... ok
+test bvh::tests::boxes_are_returned_nearest_first_and_misses_last ... ok
+test bvh::tests::the_id_dword_says_which_vertices_the_weights_belong_to ... ok
+test dxbc::tests::rejects_bad_input ... ok
+test bvh::tests::a_ray_starting_inside_a_box_enters_it_at_its_origin ... ok
+test bvh::tests::the_largest_axis_and_its_sign_do_not_change_the_answer ... ok
+test dxil::tests::detects_xbox_layout ... ok
+test bvh::tests::node_pointers_name_64_byte_nodes_past_the_descriptors_base ... ok
+test bvh::tests::halves_convert_exactly ... ok
+test bvh::tests::triangles_one_to_three_take_their_vertices_and_their_id_byte ... ok
+test dxil::tests::parses_standard_layout ... ok
+test dxbc::tests::round_trips_parts ... ok
+test dxil::tests::rejects_missing_bitcode_magic ... ok
+test bvh::tests::half_float_boxes_test_like_their_widened_values ... ok
+test emit::barycentric_tests::a_folded_f16_pair_preserves_the_old_destination_high_word ... ok
+test emit::barycentric_tests::computed_and_loaded_barycentrics_on_one_attribute ... ok
+test emit::barycentric_tests::interpolation_alone_declares_no_barycentrics ... ok
+test emit::barycentric_tests::interpolation_and_a_barycentric_value_together ... ok
+test emit::barycentric_tests::constant_weights_need_no_barycentrics ... ok
+test emit::barycentric_tests::a_first_half_read_beside_its_pair_keeps_its_partial_value ... ok
+test emit::barycentric_tests::a_masked_move_keeps_the_first_half_outside_exec ... ok
+test emit::barycentric_tests::barycentrics_read_as_values_are_sv_barycentrics ... ok
+test emit::barycentric_tests::a_standalone_first_half_reads_the_vertices ... ok
+test emit::barycentric_tests::p10_of_an_interpolated_attribute ... ok
+test emit::barycentric_tests::computed_barycentrics_read_the_vertices ... ok
+test emit::barycentric_tests::shared_row_elements_keep_element_order_in_isg1 ... ok
+test emit::barycentric_tests::a_dead_first_half_overwritten_by_a_move_adds_no_barycentrics ... ok
+test emit::bitcode::opt::tests::a_branch_on_a_constant_goes_one_way ... ok
+test emit::bitcode::opt::tests::a_branch_taken_says_what_its_condition_is ... ok
+test emit::bitcode::opt::tests::a_join_of_one_value_and_two_equal_joins ... ok
+test emit::bitcode::opt::tests::a_read_is_reused_within_its_block_until_a_store ... ok
+test emit::bitcode::opt::tests::a_value_is_reused_below_its_block_and_not_beside_it ... ok
+test emit::bitcode::opt::tests::an_annotated_handle_is_not_reused_across_blocks ... ok
+test emit::bitcode::opt::tests::branch_conditions_and_phi_cycles ... ok
+test emit::bitcode::opt::tests::constants_and_identities_fold ... ok
+test emit::bitcode::opt::tests::float_arithmetic_is_not_folded ... ok
+test emit::bitcode::opt::tests::unread_results_without_effect_are_dropped ... ok
+test emit::bitcode::opt::tests::wave_operations_have_no_effect_of_their_own ... ok
+test emit::bitcode::tests::bench_write ... ignored, benchmark: cargo test --release -p victory-shader bitcode -- --ignored --nocapture
+test emit::barycentric_tests::two_barycentric_modes_get_two_elements ... ok
+test emit::bitcode::tests::successors_of_each_terminator ... ok
+test emit::bitcode::tests::single_latches ... ok
+test emit::bitcode::tests::unread_phis_are_dropped ... ok
+test emit::bitcode::tests::vbr_and_blocks ... ok
+test emit::diff_tests::translated_compute_matches_pc ... ok
+test emit::container::tests::md5_core_matches_the_standard ... ok
+test emit::diff_tests::float_semantics_are_the_consoles ... ok
+test emit::diff_tests::translated_mesh_shaders_draw_as_pc_ones ... ok
+test emit::container::tests::psv_names_repeat_as_dxc_writes_them ... ok
+test emit::diff_tests::translated_shaders_draw_as_pc_ones ... ok
+test emit::atomic_tests::heap_texture_atomic_widths ... ok
+test emit::bitcode::tests::worklist_liveness_matches_passes ... ok
+test emit::intersect_tests::a_wide_box_crossing_two_title_pages_reads_both_host_copies ... ignored, requires the Windows WARP software adapter with shader model 6.6
+test emit::intersect_tests::node_test_cost ... ignored, benchmark: cargo test --release -p victory-shader node_test_cost -- --ignored --nocapture
+test emit::intersect_tests::a_structure_that_returns_triangle_ids_is_refused_by_name ... ok
+test emit::lower::tests::a_missing_value_stays_missing_through_two_live_joins ... ignored, ours marks joins read through joins only with VICTORY_STRICT_JOINS (40 programs stop otherwise)
+test emit::lower::tests::buffer_formats_by_number ... ok
+test emit::lower::tests::a_descriptor_selected_by_scc_picks_its_heap_index ... ok
+test emit::lower::tests::packed_buffer_formats_by_number ... ok
+test emit::lower::tests::a_scalar_carry_chain_reaches_the_select ... ok
+test emit::lower::tests::buffer_cache_invalidations_lower_as_no_ops ... ok
+test emit::lower::tests::packed_pixel_inputs_find_their_second_row ... ok
+test emit::lower::tests::packed_elements_behind_another_take_the_first_free_dword ... ok
+test emit::lower::tests::lane_uniform_handles_v255_and_high_pair_operands ... ok
+test emit::lower::tests::small_floats_widen_as_halves ... ok
+test emit::lower::tests::perm_constant_selector_needs_no_int64 ... ok
+test emit::lower::tests::first_lane_read_of_uniform_lds_load_lowers_on_wave32 ... ok
+test emit::lower::tests::perm_dynamic_selector_needs_no_int64 ... ok
+test emit::lower::tests::scalar_bit_searches_lower ... ok
+test emit::lower::tests::scalar_bit_tests_lower ... ok
+test emit::lower::tests::opposite_row_permute_validates_in_split_waves ... ok
+test emit::barycentric_tests::non_canonical_system_value_names_validate_in_isg1_and_osg1 ... ok
+test emit::own_bits::tests::a_bit_number_read_after_the_loop_is_not_the_lanes_own ... ok
+test emit::lower::tests::waterfall_loops_over_per_lane_descriptors_sample_with_each_lanes_own ... ok
+test emit::lower::tests::waterfall_loops_over_descriptors_joined_per_lane_sample_with_each_lanes_own ... ok
+test emit::intersect_tests::a_descriptor_of_numbers_is_title_memory_read_through_the_directory ... ok
+test emit::own_bits::tests::a_loop_whose_lanes_all_work_at_every_bit_needs_the_whole_waves_or ... ok
+test emit::own_bits::tests::a_wave_or_that_only_steers_a_loop_over_own_bits_is_found ... ok
+test emit::own_bits::tests::the_bits_still_to_visit_read_in_the_body_are_not_the_lanes_own ... ok
+test emit::own_bits::tests::a_count_of_the_rounds_is_not_the_lanes_own ... ok
+test emit::own_bits::tests::an_effect_where_every_lane_passes_is_not_the_lanes_own ... ok
+test emit::permlane_tests::permlane_fetch_inactive_after_a_lane_abort_is_rejected ... FAILED
+test emit::permlane_tests::permlane_fetch_inactive_after_reconvergence_is_allowed ... FAILED
+test emit::rect::tests::rectangle_stages_that_cannot_be_made_are_refused ... ok
+test emit::permlane_tests::permlane_fetch_inactive_outside_the_host_branch_is_rejected ... FAILED
+test emit::permlane_tests::permlane_fetch_inactive_inside_a_uniform_branch_is_allowed ... FAILED
+test emit::sampler::tests::console_compiled_samplers_decode ... ok
+test emit::tests::a_carry_in_from_a_divergent_join_is_refused ... ok
+test emit::tests::a_backward_permute_reads_the_lane_its_address_names ... ok
+test emit::tests::an_exec_high_write_does_not_overflow_the_stack ... ok
+test emit::tests::reading_a_channel_below_an_input_element_does_not_underflow ... ok
+test emit::tests::a_stencil_export_declares_the_stencil_ref_feature ... ok
+test emit::tests::a_mask_whose_high_dword_is_rewritten_is_refused ... ok
+test emit::tests::masked_vector_output_keeps_the_outer_restore_guard ... ok
+test emit::bitcode::tests::written_bytes_unchanged ... ok
+test emit::tests::constant_color_validates ... ok
+test emit::tests::the_clean_up_switch_parses_or_runs_every_pass ... ok
+test emit::tests::the_loop_limit_switch_parses_or_falls_back ... ok
+test emit::threading::tests::leaves_unknown_flags_and_divergent_forks_alone ... ok
+test emit::threading::tests::only_the_buffer_load_reaches_the_numeric_read ... ok
+test emit::static_sampler_tests::one_samplers_words_with_and_without_comparison_get_two_slots ... ok
+test emit::tests::sample_interpolated_inputs_set_psv_sample_frequency ... ok
+test emit::tests::scc_some_in_a_divergent_branch_lowers_per_host_wave_on_wave32 ... ok
+test emit::rect::tests::the_rectangle_stage_is_a_geometry_shader ... ok
+test emit::tests::stub_pipeline_is_created ... ok
+test emit::tests::valu_div_f32_sequence_executes_on_gpu ... ok
+test emit::bitcode::opt::tests::every_pass_leaves_what_random_programs_store ... ok
+test emit::barycentric_tests::first_half_values_render_on_hardware_and_warp ... ok
+test emit::rect::tests::rectangles_are_drawn_whole ... ok
+test emit::permlane_tests::permlane_rows_and_inactive_sources ... FAILED
+test emit::tests::structured_buffer_record_count_matches_raw_host_view ... ok
+test emit::valu_tests::cbv_narrow_buffer_loads_extract_and_sign_extend ... ok
+test emit::valu_tests::cvt_16bit_int_from_f16_saturates_and_honors_modifiers ... ok
+test emit::intersect_tests::the_64_bit_node_test_over_title_memory_matches_the_reference_on_the_card ... ok
+test emit::valu_tests::f16_omod_applies_before_clamp ... ok
+test emit::intersect_tests::the_64_bit_node_test_in_a_host_buffer_matches_the_reference_on_the_card ... ok
+test emit::intersect_tests::the_32_bit_node_test_in_a_host_buffer_matches_the_reference_on_the_card ... ok
+test emit::valu_tests::ds_cmpst_f32_compares_as_ieee_floats ... ok
+test emit::valu_tests::ds_add_f32_accumulates_atomically_across_waves ... ok
+test emit::valu_tests::tbuffer_load_format_d16_packs_float_and_int_channels ... ok
+test emit::valu_tests::terminal_rdna_compute ... ok
+test emit::intersect_tests::the_32_bit_node_test_over_title_memory_matches_the_reference_on_the_card ... ok
+test emit::valu_tests::bfe_signed_and_unsigned_match_rdna2 has been running for over 60 seconds
+test emit::valu_tests::bitwise_mov_and_cndmask_preserve_subnormals_and_snans has been running for over 60 seconds
+test emit::valu_tests::buffer_atomic_extended_ops_match_rdna2 has been running for over 60 seconds
+test emit::valu_tests::ds_min_max_f32_are_atomic_across_waves has been running for over 60 seconds
+test emit::valu_tests::ds_min_max_f32_order_floats_and_return_the_old_value has been running for over 60 seconds
+test emit::valu_tests::float_compares_that_are_always_false_or_true has been running for over 60 seconds
+test emit::valu_tests::max_and_min_order_negative_zero_below_positive_zero has been running for over 60 seconds
+test emit::valu_tests::v_cmp_class_f16_matches_rdna2 ... ok
+test emit::valu_tests::min_max_and_med3_read_denormals_as_signed_zeros has been running for over 60 seconds
+test emit::valu_tests::bfe_signed_and_unsigned_match_rdna2 ... ok
+test emit::valu_tests::v_cvt_f32_f64_rounds_to_nearest_even ... ignored, expects results below the smallest normal float flushed to zero; the IEEE lowering (v_cvt_f32_f64_matches_ieee754) is kept until the console's mode is checked
+test emit::valu_tests::packed_add_selects_halves_of_inline_constants has been running for over 60 seconds
+test emit::valu_tests::rcp_rsq_sqrt_log_exp_f32_special_values_match_rdna2 has been running for over 60 seconds
+test emit::valu_tests::scalar_sign_extension_preserves_scc ... ok
+test emit::valu_tests::packed_add_selects_halves_of_inline_constants ... ok
+test emit::valu_tests::scalar_zero_counts_set_scc_for_nonzero_results ... ok
+test emit::valu_tests::scalar_bit_searches_match_the_console has been running for over 60 seconds
+test emit::valu_tests::scalar_lshl_add_and_minmax_set_scc has been running for over 60 seconds
+test emit::valu_tests::scalar_bit_searches_match_the_console ... ok
+test emit::valu_tests::v_cmp_lg_is_false_for_nan ... ok
+test emit::valu_tests::v_cvt_f32_f64_matches_ieee754 has been running for over 60 seconds
+test emit::valu_tests::v_cvt_f32_i32_u32_and_ubyte_round_to_nearest_even has been running for over 60 seconds
+test emit::valu_tests::ds_min_max_f32_order_floats_and_return_the_old_value ... ok
+test emit::valu_tests::float_compares_that_are_always_false_or_true ... ok
+test emit::valu_tests::max_and_min_order_negative_zero_below_positive_zero ... ok
+test emit::valu_tests::bitwise_mov_and_cndmask_preserve_subnormals_and_snans ... ok
+test emit::valu_tests::v_cvt_f32_f64_matches_ieee754 ... ok
+test emit::valu_tests::v_cvt_i32_and_u32_f32_truncate_saturate_and_take_nan_as_zero has been running for over 60 seconds
+test emit::valu_tests::v_cvt_norm_i16_and_u16_f16_round_the_exact_product has been running for over 60 seconds
+test emit::valu_tests::v_cvt_pkrtz_f16_f32_honors_clamp has been running for over 60 seconds
+test emit::valu_tests::min_max_and_med3_read_denormals_as_signed_zeros ... ok
+test emit::valu_tests::v_cvt_i32_and_u32_f32_truncate_saturate_and_take_nan_as_zero ... ok
+test emit::valu_tests::v_cvt_u16_and_i16_f16_saturate has been running for over 60 seconds
+test emit::valu_tests::v_fract_f16_never_returns_one has been running for over 60 seconds
+test emit::valu_tests::v_cvt_norm_i16_and_u16_f16_round_the_exact_product ... ok
+test emit::valu_tests::ds_min_max_f32_are_atomic_across_waves ... ok
+test emit::valu_tests::v_cvt_pkrtz_f16_f32_honors_clamp ... ok
+test emit::valu_tests::v_fract_f32_never_returns_one ... ok
+test emit::valu_tests::v_med3_f16_matches_rdna2_with_nan ... ok
+test emit::valu_tests::v_med3_f32_matches_rdna2_with_nan ... ok
+test emit::valu_tests::v_cvt_u16_and_i16_f16_saturate ... ok
+test emit::valu_tests::v_fract_f16_never_returns_one ... ok
+test emit::valu_tests::v_sin_and_v_cos_f16_reduce_large_turns ... ok
+test emit::valu_tests::wave_prefix_f32_uses_signed_flag_and_validates ... ok
+test emit::valu_tests::rcp_rsq_sqrt_log_exp_f32_special_values_match_rdna2 ... ok
+test emit::valu_tests::whole_wave_f64_sum_and_cvt_f32_f64 ... ok
+test emit::waterfall_tests::lanes_load_from_the_buffer_their_nested_arms_chose ... ok
+test emit::valu_tests::v_ldexp_f32_scales_and_handles_edge_cases ... ok
+test emit::waterfall_tests::lanes_sample_the_entry_their_offset_names_in_the_console_waterfall ... ok
+test emit::waterfall_tests::lanes_sample_the_texture_their_arm_loaded_or_picked ... ok
+test emit::waterfall_tests::lanes_sample_the_texture_their_if_else_arm_chose ... ok
+test emit::wave64_tests::a_16_bit_sum_rounds_to_nearest_when_asked_to ... ok
+test emit::wave::tests::a_sum_of_halves_over_the_wave_is_followed_in_the_order_of_its_tree ... ok
+test emit::wave::tests::buddies_are_the_two_halves_of_an_aligned_run ... ok
+test emit::wave::tests::constant_decodes_width_and_inline_kinds ... ok
+test emit::wave::tests::cross_lane_ops_on_pre_section_vgpr_do_not_collapse_to_identity ... ok
+test emit::wave::tests::dpp_lanes_follow_the_isa ... ok
+test emit::wave::tests::exec_minus_two_masks_lane_zero_and_enforces_dpp_guard ... ok
+test emit::wave::tests::opposite_row_permute_with_inactive_sources_is_not_simulated ... ok
+test emit::wave::tests::per_lane_prefix_soundness ... ok
+test emit::wave::tests::prefixes_are_recognised ... ok
+test emit::wave::tests::wave32_mov_b64_all_lanes_keeps_exec_masked_for_dpp ... ok
+test gfx10::opcodes::tests::indices_match_opcode_tables ... ok
+test gfx10::opcodes::tests::s_ttracedata_imm_is_sopp_0x28 ... ok
+test gfx10::sp3::tests::export_target_16_is_pos4 ... ok
+test gfx10::sp3::tests::image_d16_data_is_packed ... ok
+test gfx10::sp3::tests::lane_masks_follow_the_wave_size ... ok
+test gfx10::sp3::tests::memory_and_export ... ok
+test gfx10::sp3::tests::scalar ... ok
+test gfx10::sp3::tests::vector_modifiers ... ok
+test gfx10::tests::follows_branches_and_skips_data ... ok
+test gfx10::tests::follows_far_jumps ... ok
+test gfx10::tests::follows_far_jumps_backward ... ok
+test gfx10::tests::lengths_and_names ... ok
+test gfx10::tests::preserves_all_five_image_words ... ok
+test gfx10::tests::rejects_bad_code ... ok
+test gfx10::tests::vop3_names_match_aliased_encodings ... ok
+test io::tests::a_standalone_f16_first_half_is_weighted ... ok
+test io::tests::computed_barycentrics_evaluate_each_half ... ok
+test io::tests::first_halves_read_through_a_phi_keep_their_partial_values ... ok
+test io::tests::interpolation_pairs_and_color_exports ... ok
+test io::tests::mesh_inputs_and_primitive_export ... ok
+test io::tests::pixel_vgprs_follow_the_input_address ... ok
+test io::tests::unpaired_or_unknown_interpolation_fails ... ok
+test ir::liveness_tests::generated_graphs_match_full_sweeps ... ok
+test ir::liveness_tests::long_chain_with_backedge_matches_full_sweeps ... ok
+test ir::tests::a_backedge_to_a_relative_reader_keeps_the_later_slots_physical ... ok
+test ir::tests::a_branch_around_the_save_keeps_both_halves_of_the_pair_physical ... ok
+test ir::tests::a_relative_reader_between_the_saves_keeps_the_whole_pair_physical ... ok
+test ir::tests::a_relative_reader_keeps_the_early_slot_but_not_the_later_pair ... ok
+test ir::tests::a_skip_is_left_out_when_the_scalars_it_changes_come_back_or_are_not_read ... ok
+test ir::tests::an_empty_exec_skip_keeps_a_store_behind_a_mask_restore ... ok
+test ir::tests::drops_scheduling_and_follows_far_jumps ... ok
+test ir::tests::in_place_scalar_ops_read_their_destination ... ok
+test ir::tests::joins_get_phis_only_where_values_differ ... ok
+test ir::tests::loops_carry_values_through_phis ... ok
+test ir::tests::relative_reads_keep_vgpr_writes_unless_m0_proves_them_disjoint ... ok
+test ir::tests::relative_vgpr_access_spans_up_to_the_vgpr_count ... ok
+test ir::tests::reports_what_it_cannot_express ... ok
+test native::tests::compute_dispatch_settings ... ok
+test native::tests::finds_graphics_programs ... ok
+test native::tests::finds_mesh_and_compute_programs ... ok
+test native::tests::initialized_sgprs_covers_user_system_and_scratch ... ok
+test native::tests::pc_layout_has_none ... ok
+test native::tests::reads_every_native_blob ... ok
+test native::tests::reads_mesh_outputs_and_limits ... ok
+test native::tests::reads_pixel_io_and_applies_the_full_export_patch ... ok
+test native::tests::reads_root_tables ... ok
+test native::tests::rejects_corrupt_blobs ... ok
+test native::tests::rejects_truncated_oversized_and_bad_checksum_xbch_streams ... ok
+test resource::tests::a_buffer_descriptor_joined_per_lane_is_traced_on_the_paths_of_lanes_that_load ... ok
+test resource::tests::a_code_table_address_taken_from_the_first_lane ... ok
+test resource::tests::a_compare_that_does_not_mask_the_access_is_no_waterfall ... ok
+test resource::tests::a_descriptor_kept_per_lane_is_its_load_and_needs_no_waterfall ... ok
+test resource::tests::a_descriptor_read_from_the_first_lane_of_a_loop_phi_fails_naming_it ... ok
+test resource::tests::a_descriptor_used_after_exec_is_restored_is_no_waterfall ... ok
+test resource::tests::a_first_lane_read_outside_a_loop_is_no_waterfall ... ok
+test resource::tests::a_first_lane_read_without_its_compare_is_no_waterfall ... ok
+test resource::tests::a_loop_that_drops_unmatched_lanes_is_no_waterfall ... ok
+test resource::tests::a_per_lane_descriptor_some_lanes_do_not_write_fails ... ok
+test resource::tests::a_retry_that_keeps_other_lanes_than_those_waiting_is_no_waterfall ... ok
+test resource::tests::a_selection_that_mixes_two_descriptors_fails ... ok
+test resource::tests::a_v_cmpx_waterfall_whose_retry_drops_lanes_is_none ... ok
+test resource::tests::a_waterfall_narrowed_by_v_cmpx_is_one ... ok
+test resource::tests::a_waterfall_nested_in_another_is_refused_by_name ... ok
+test resource::tests::a_wave64_access_with_exec_hi_overwritten_is_no_waterfall ... ok
+test resource::tests::a_wave64_retry_of_one_half_is_no_waterfall ... ok
+test resource::tests::an_access_under_a_further_mask_is_no_waterfall ... ok
+test resource::tests::descriptors_joined_by_control_flow_are_traced_per_edge ... ok
+test resource::tests::descriptors_joined_from_a_per_lane_load_and_a_per_lane_choice_are_traced_per_path ... ok
+test resource::tests::descriptors_read_from_the_first_lane_of_a_per_lane_choice_are_traced_per_lane ... ok
+test resource::tests::descriptors_read_from_the_first_lane_of_an_if_else_join_are_traced_per_path ... ok
+test resource::tests::descriptors_read_from_the_first_lane_of_lds_fail_naming_it ... ok
+test resource::tests::descriptors_read_from_the_first_lane_of_per_lane_loads_are_traced_to_them ... ok
+test resource::tests::descriptors_selected_by_scc_are_traced_per_outcome ... ok
+test resource::tests::heap_indices_from_root_constants_in_a_merged_stage ... ok
+test resource::tests::loads_at_one_first_lane_offset_have_one_address ... ok
+test resource::tests::root_descriptors_are_built_in_code ... ok
+test resource::tests::spilled_sgprs_are_followed_through_vgpr_lanes ... ok
+test resource::tests::table_descriptors_are_loaded_from_their_range ... ok
+test resource::tests::the_console_waterfall_over_a_first_lane_offset_is_one ... ok
+test resource::tests::two_paths_into_one_code_table_load ... ok
+test resource::tests::untraceable_addresses_fail_with_a_reason ... ok
+test spill::tests::a_used_dword_no_parameter_declares_keeps_its_load ... ok
+test spill::tests::loads_of_the_spilled_table_become_entry_registers ... ok
+test spill::tests::parameters_in_registers_are_left_alone ... ok
+test structure::tests::a_mask_joined_over_a_back_edge_with_a_rewritten_high_dword_is_not_the_compare ... ok
+test structure::tests::a_mask_whose_high_dword_is_rewritten_is_not_the_compare ... ok
+test structure::tests::a_search_that_remembers_answers_as_one_made_anew ... ok
+test structure::tests::a_select_on_the_condition_a_lane_loop_ended_with_takes_its_second_operand ... ok
+test structure::tests::divergent_if_becomes_a_lane_branch ... ok
+test structure::tests::divergent_loop_exits_per_lane ... ok
+test structure::tests::exec_narrowed_without_a_branch_leaves_a_guard ... ok
+test structure::tests::irreducible_loops_are_split ... ok
+test structure::tests::loop_mask_accumulator_from_zero_tracks_phi_and_edges ... ok
+test structure::tests::loop_mask_phi_reset_to_constant_on_back_edge ... ok
+test structure::tests::mask_phi_joining_constant_and_compare_records_edge_bools ... ok
+test structure::tests::scalar_branches_stay_uniform ... ok
+test emit::wave64_tests::a_lane_mask_joined_with_a_number_is_read_as_the_number_it_is ... ok
+test emit::wave64_tests::a_lane_write_reaches_its_lane_outside_exec ... ok
+test emit::wave64_tests::a_sum_of_halves_over_the_wave_is_the_consoles_tree_bit_for_bit ... ok
+test emit::waterfall_tests::immediate_sampler_chosen_by_control_flow ... ok
+test emit::wave64_tests::a_sum_of_halves_where_lanes_have_left_is_the_consoles_tree_bit_for_bit ... ok
+test emit::wave64_tests::local_waves_select_their_console_bits_from_a_constant_mask ... ok
+test emit::wave64_tests::scc_of_a_mask_operation_joined_with_a_scalar_test_needs_the_skip_wave_wide ... ok
+test emit::wave64_tests::wave32_pixel_shader_runs_as_32_lane_halves_on_wave64_hosts ... ok
+test emit::waterfall_tests::lanes_sample_their_own_texture_in_a_waterfall_narrowed_by_v_cmpx ... ok
+test emit::valu_tests::v_sin_and_v_cos_f32_reduce_large_turns ... ok
+test emit::valu_tests::buffer_atomic_extended_ops_match_rdna2 ... ok
+test emit::valu_tests::v_cvt_f32_i32_u32_and_ubyte_round_to_nearest_even ... ok
+test emit::valu_tests::scalar_lshl_add_and_minmax_set_scc ... ok
+test emit::wave64_tests::a_wave_or_inside_a_lane_branch_needs_the_branch_wave_wide ... ok
+test emit::valu_tests::v_permlane16_and_x16_read_the_lanes_their_selectors_pick ... FAILED
+
+failures:
+
+---- emit::permlane_tests::permlane_fetch_inactive_after_a_lane_abort_is_rejected stdout ----
+
+thread 'emit::permlane_tests::permlane_fetch_inactive_after_a_lane_abort_is_rejected' (26640) panicked at crates\victory-shader\src\emit\permlane_tests.rs:190:5:
+assertion failed: matches!(lowered(&native, 32),
+    Err(ShaderError::Unsupported
+    { what: "a permlane fetch from lanes outside the host branch", .. }))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- emit::permlane_tests::permlane_fetch_inactive_after_reconvergence_is_allowed stdout ----
+
+thread 'emit::permlane_tests::permlane_fetch_inactive_after_reconvergence_is_allowed' (31604) panicked at crates\victory-shader\src\emit\permlane_tests.rs:153:26:
+fetch-inactive after the lanes reconverge: Unsupported { offset: 52, what: "unsupported opposite-row permutation controls" }
+
+---- emit::permlane_tests::permlane_fetch_inactive_outside_the_host_branch_is_rejected stdout ----
+
+thread 'emit::permlane_tests::permlane_fetch_inactive_outside_the_host_branch_is_rejected' (15100) panicked at crates\victory-shader\src\emit\permlane_tests.rs:133:5:
+assertion failed: matches!(lowered(&native, 32),
+    Err(ShaderError::Unsupported
+    { what: "a permlane fetch from lanes outside the host branch", .. }))
+
+---- emit::permlane_tests::permlane_fetch_inactive_inside_a_uniform_branch_is_allowed stdout ----
+
+thread 'emit::permlane_tests::permlane_fetch_inactive_inside_a_uniform_branch_is_allowed' (30072) panicked at crates\victory-shader\src\emit\permlane_tests.rs:166:26:
+all host lanes take the scalar branch together: Unsupported { offset: 52, what: "unsupported opposite-row permutation controls" }
+
+---- emit::permlane_tests::permlane_rows_and_inactive_sources stdout ----
+hardware waves 32..32
+permlane: testing row and EXEC cases on hardware
+
+thread 'emit::permlane_tests::permlane_rows_and_inactive_sources' (35760) panicked at crates\victory-shader\src\emit\permlane_tests.rs:294:41:
+assertion `left == right` failed: hardware wave64=false cross=false fi=false bc=false alias=false selectors=[89abcdef, 1234567] mask=55555555 lane=0
+  left: 305397775
+ right: 42
+
+---- emit::valu_tests::v_permlane16_and_x16_read_the_lanes_their_selectors_pick stdout ----
+
+thread 'emit::valu_tests::v_permlane16_and_x16_read_the_lanes_their_selectors_pick' (25036) panicked at crates\victory-shader\src\emit\valu_tests.rs:172:6:
+lower: Unsupported { offset: 48, what: "unsupported opposite-row permutation controls" }
+
+
+failures:
+    emit::permlane_tests::permlane_fetch_inactive_after_a_lane_abort_is_rejected
+    emit::permlane_tests::permlane_fetch_inactive_after_reconvergence_is_allowed
+    emit::permlane_tests::permlane_fetch_inactive_inside_a_uniform_branch_is_allowed
+    emit::permlane_tests::permlane_fetch_inactive_outside_the_host_branch_is_rejected
+    emit::permlane_tests::permlane_rows_and_inactive_sources
+    emit::valu_tests::v_permlane16_and_x16_read_the_lanes_their_selectors_pick
+
+test result: FAILED. 271 passed; 6 failed; 5 ignored; 0 measured; 0 filtered out; finished in 175.78s
+
+error: test failed, to rerun pass `-p victory-shader --lib`
+     Running unittests src\main.rs (target\release\deps\xtask-e74c19a053836521.exe)
+
+running 6 tests
+test policy::tests::accepts_source ... ok
+test policy::tests::rejects_data_smuggled_into_text ... ok
+test agility::tests::version_matches_the_sdk_version_victory_exports ... ok
+test agility::tests::extracts_stored_and_deflated_files ... ok
+test policy::tests::rejects_game_like_files ... ok
+test policy::tests::repository_passes_policy ... FAILED
+
+failures:
+
+---- policy::tests::repository_passes_policy stdout ----
+POLICY: NOTICE: file type not on the allowlist
+POLICY: crates/victory-shader/src/emit/lower.rs: 586853 bytes exceeds the 524288-byte limit
+
+thread 'policy::tests::repository_passes_policy' (31940) panicked at xtask\src\policy.rs:191:53:
+called `Result::unwrap()` on an `Err` value: 2 asset-policy violation(s). Nothing from the game may be committed; see docs/asset-policy.md
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    policy::tests::repository_passes_policy
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+error: test failed, to rerun pass `-p xtask --bin xtask`
+   Doc-tests victory_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests victory_formats
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests victory_game
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests victory_gpu
+error: this file contains an unclosed delimiter
+   --> crates\victory-gpu\src\memory.rs:421:3
+    |
+314 | ) -> Option<Ready> {
+    |                    - unclosed delimiter
+...
+384 |     if writes {
+    |               - unclosed delimiter
+385 |         for (n, shadow) in m.copies.iter().enumerate().rev() {
+    |                                                              - this delimiter might not be properly closed...
+...
+421 | }
+    | -^
+    | |
+    | ...as it matches this but it has different indentation
+
+error: aborting due to 1 previous error
+
+error: doctest failed, to rerun pass `-p victory-gpu --doc`
+
+Caused by:
+  process didn't exit successfully: `C:\Users\loune\.rustup\toolchains\1.98.1-x86_64-pc-windows-msvc\bin\rustdoc.exe 
+--edition=2024 --crate-type lib --color auto --crate-name victory_gpu --test crates\victory-gpu\src\lib.rs 
+--test-run-directory C:\Users\loune\code\victory-fork\crates\victory-gpu -L 
+native=C:\Users\loune\code\victory-fork\target\release\build\blake3-6eb687818060ebd8\out --warn=clippy::all 
+--deny=unused_must_use --deny=unsafe_op_in_unsafe_fn --warn=clippy::undocumented_unsafe_blocks 
+--allow=clippy::sliced_string_as_bytes --allow=clippy::min_max --allow=clippy::manual_clamp 
+--allow=clippy::implicit_saturating_sub --allow=clippy::chunks_exact_to_as_chunks --extern 
+anyhow=C:\Users\loune\code\victory-fork\target\release\deps\libanyhow-648ffb369a8e46a1.rlib --extern 
+blake3=C:\Users\loune\code\victory-fork\target\release\deps\libblake3-41710162625ddce3.rlib --extern 
+tempfile=C:\Users\loune\code\victory-fork\target\release\deps\libtempfile-bac89a0eadc45ef9.rlib --extern 
+tracing=C:\Users\loune\code\victory-fork\target\release\deps\libtracing-8612249dee5d7bc4.rlib --extern 
+victory_formats=C:\Users\loune\code\victory-fork\target\release\deps\libvictory_formats-c26bd50812b3d0a1.rlib --extern 
+victory_gpu=C:\Users\loune\code\victory-fork\target\release\deps\libvictory_gpu-2ee12f1cc8fc5c16.rlib --extern 
+victory_pipeline=C:\Users\loune\code\victory-fork\target\release\deps\libvictory_pipeline-4bf5a2a3ca106cf2.rlib 
+--extern victory_shader=C:\Users\loune\code\victory-fork\target\release\deps\libvictory_shader-620aadb638870ed9.rlib 
+--extern windows=C:\Users\loune\code\victory-fork\target\release\deps\libwindows-7b9f61dd8dabd87d.rlib --extern 
+windows_sys=C:\Users\loune\code\victory-fork\target\release\deps\libwindows_sys-7208cdb98326ceaf.rlib --extern 
+zlib_rs=C:\Users\loune\code\victory-fork\target\release\deps\libzlib_rs-3eaacd3b5b0bf511.rlib -L 
+dependency=C:\Users\loune\code\victory-fork\target\release\deps -C embed-bitcode=no --check-cfg cfg(docsrs,test) 
+--check-cfg "cfg(feature, values(\"diagnostics\"))" --error-format human` (exit code: 1)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.
+   Doc-tests victory_hle
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests victory_loader
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests victory_pe
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests victory_pipeline
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests victory_shader
+error: encountered diff marker
+  --> crates\victory-shader\src\emit\shader.rs:45:1
+   |
+45 | <<<<<<< HEAD
+   | ^^^^^^^ between this marker and `=======` is the code that you are merging into
+...
+48 | =======
+   | ------- between this marker and `>>>>>>>` is the incoming code
+...
+53 | >>>>>>> pr/346
+   | ^^^^^^^ this marker concludes the conflict region
+   |
+   = note: conflict markers indicate that a merge was started but could not be completed due to merge conflicts
+           to resolve a conflict, keep only the code you want and then delete the lines containing conflict markers
+   = help: if you are in a merge, the top section is the code you already had checked out and the bottom section is 
+the new code
+           if you are in a rebase, the top section is the code being rebased onto and the bottom section is the code 
+you had checked out which is being rebased
+   = note: for an explanation on these markers from the `git` documentation, visit 
+<https://git-scm.com/book/en/v2/Git-Tools-Advanced-Merging#_checking_out_conflicts>
+
+error: aborting due to 1 previous error
+
+error: doctest failed, to rerun pass `-p victory-shader --doc`
+
+Caused by:
+  process didn't exit successfully: `C:\Users\loune\.rustup\toolchains\1.98.1-x86_64-pc-windows-msvc\bin\rustdoc.exe 
+--edition=2024 --crate-type lib --color auto --crate-name victory_shader --test crates\victory-shader\src\lib.rs 
+--test-run-directory C:\Users\loune\code\victory-fork\crates\victory-shader -L 
+native=C:\Users\loune\code\victory-fork\target\release\build\blake3-6eb687818060ebd8\out --warn=clippy::all 
+--deny=unused_must_use --deny=unsafe_op_in_unsafe_fn --warn=clippy::undocumented_unsafe_blocks 
+--allow=clippy::sliced_string_as_bytes --allow=clippy::min_max --allow=clippy::manual_clamp 
+--allow=clippy::implicit_saturating_sub --allow=clippy::chunks_exact_to_as_chunks --extern 
+thiserror=C:\Users\loune\code\victory-fork\target\release\deps\libthiserror-62ec5f40468b179a.rlib --extern 
+victory_shader=C:\Users\loune\code\victory-fork\target\release\deps\libvictory_shader-620aadb638870ed9.rlib --extern 
+windows=C:\Users\loune\code\victory-fork\target\release\deps\libwindows-7b9f61dd8dabd87d.rlib --extern 
+windows_sys=C:\Users\loune\code\victory-fork\target\release\deps\libwindows_sys-7208cdb98326ceaf.rlib --extern 
+zlib_rs=C:\Users\loune\code\victory-fork\target\release\deps\libzlib_rs-3eaacd3b5b0bf511.rlib -L 
+dependency=C:\Users\loune\code\victory-fork\target\release\deps -C embed-bitcode=no --cfg "feature=\"host\"" 
+--check-cfg cfg(docsrs,test) --check-cfg "cfg(feature, values(\"diagnostics\", \"host\"))" -C 
+link-arg=/EXPORT:D3D12SDKVersion,DATA -C link-arg=/EXPORT:D3D12SDKPath,DATA --error-format human` (exit code: 1)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.
+error: 5 targets failed:
+    `-p victory-gpu --lib`
+    `-p victory-shader --lib`
+    `-p xtask --bin xtask`
+    `-p victory-gpu --doc`
+    `-p victory-shader --doc`
