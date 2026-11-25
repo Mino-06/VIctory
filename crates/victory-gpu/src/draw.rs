@@ -185,9 +185,9 @@ pub(crate) struct State {
     /// Graphics, compute.
     host_roots: [usize; 2],
     host_heaps: [usize; 2],
-    /// Tables made afresh in this list: (table, slot count, contents) → first
-    /// dynamic slot.
-    fresh_tables: std::collections::HashMap<(u64, u32, u64), u32>,
+    /// Tables made afresh in this list, reusable by bindings of a prefix of
+    /// the same unchanged table.
+    fresh_tables: FreshTables,
     /// The dynamic slots the list holds: title heap, first, count; given
     /// back when the list has run, is reset or released.
     dynamic: Vec<(usize, u32, u32)>,
@@ -200,6 +200,37 @@ pub(crate) struct State {
     root_uav_slots: std::collections::HashMap<(usize, u64), RootSlot>,
     /// The list ran and its dynamic slots were given back.
     tables_gone: bool,
+}
+
+struct FreshTable {
+    first: u32,
+    records: Vec<[u32; 3]>,
+}
+
+/// Fresh dynamic tables made in a command list, by the title table's
+/// address: each copy's first dynamic slot and the records it was made
+/// from, so a later binding of a prefix of the same unchanged table reuses
+/// its slots instead of taking another copy's worth.
+#[derive(Default)]
+struct FreshTables {
+    by_table: std::collections::HashMap<u64, Vec<FreshTable>>,
+}
+
+impl FreshTables {
+    /// The first dynamic slot of a copy whose records begin with `records`.
+    fn find(&self, table: u64, records: &[[u32; 3]]) -> Option<u32> {
+        self.by_table.get(&table)?.iter().find_map(|entry| {
+            entry.records.starts_with(records).then_some(entry.first)
+        })
+    }
+
+    fn insert(&mut self, table: u64, first: u32, records: Vec<[u32; 3]>) {
+        self.by_table.entry(table).or_default().push(FreshTable { first, records });
+    }
+
+    fn clear(&mut self) {
+        self.by_table.clear();
+    }
 }
 
 impl Drop for State {
@@ -2026,18 +2057,18 @@ impl State {
                 once!(slot, n, "fresh descriptor table exceeds the available span");
                 continue;
             }
-            // The table and what its entries hold (record words).
-            let key = {
-                use std::hash::{Hash, Hasher};
-                let mut h = std::collections::hash_map::DefaultHasher::new();
-                for k in 0..n {
+            // The table's record words for slots `0..n`, matched by exact
+            // prefix against the fresh copies already made in this list: a
+            // stage or draw binding a prefix of an unchanged table shares
+            // its dynamic slots (port of upstream #1845).
+            let records: Vec<[u32; 3]> = (0..n)
+                .map(|k| {
                     let at = table + u64::from(k) * 32;
                     // SAFETY: a descriptor slot in title memory.
-                    unsafe { (at as *const [u32; 3]).read_unaligned() }.hash(&mut h);
-                }
-                (table, n, h.finish())
-            };
-            if let Some(&first) = self.fresh_tables.get(&key) {
+                    unsafe { (at as *const [u32; 3]).read_unaligned() }
+                })
+                .collect();
+            if let Some(first) = self.fresh_tables.find(table, &records) {
                 for u in entries.iter().filter(|u| u.kind != ResourceType::Cbv) {
                     let handle = table + u64::from(u.table_offset_dwords) * 4;
                     if let Some(view) = crate::descriptor::view(handle) {
@@ -2064,7 +2095,7 @@ impl State {
                 made.push((slot, u32::MAX));
                 continue;
             };
-            self.fresh_tables.insert(key, first);
+            self.fresh_tables.insert(table, first, records);
             self.dynamic
                 .push((std::ptr::from_ref(heap) as usize, first, n));
             // The title's own slots of this table: what the draw reads of
@@ -2823,7 +2854,29 @@ fn staging_budget_per_frame(vram_budget: Option<u64>) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::staging_budget_per_frame;
+
+    #[test]
+    fn fresh_tables_reuse_matching_prefixes_and_see_changes() {
+        let mut cache = FreshTables::default();
+        let table = 0x1000_0000;
+        let full: Vec<[u32; 3]> = (0..16).map(|k| [1, k, 1]).collect();
+        cache.insert(table, 100, full.clone());
+        assert_eq!(cache.find(table, &full), Some(100));
+        assert_eq!(cache.find(table, &full[..8]), Some(100));
+        assert_eq!(cache.find(table, &full[..1]), Some(100));
+        let mut changed = full[..8].to_vec();
+        changed[3][2] = 2;
+        assert_eq!(cache.find(table, &changed), None);
+        let mut wider = full.clone();
+        wider.extend((16..20).map(|k| [1, k, 1]));
+        assert_eq!(cache.find(table, &wider), None);
+        cache.insert(table, 200, wider.clone());
+        assert_eq!(cache.find(table, &wider[..18]), Some(200));
+        assert_eq!(cache.find(table + 32, &full[..8]), None);
+        cache.clear();
+        assert_eq!(cache.find(table, &full), None);
+    }
+    use super::{FreshTables, staging_budget_per_frame};
 
     #[test]
     fn staging_budget_scales_with_vram_budget() {
