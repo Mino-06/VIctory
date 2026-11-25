@@ -1132,3 +1132,34 @@ fn wave64_implicit_reads_are_not_marked_lane_uniform() {
         );
     }
 }
+
+/// A program that still declares 64-lane waves after every 32-lane form was tried (an LDS
+/// read and write in one lane-branch region: `meshlet_culling`, `shadowmask`,
+/// `GpuParticleEmit`... 43 of the title's) is refused by `CreateComputePipelineState` on a host
+/// of 32-lane waves (E_INVALIDARG): `emit` says it does not translate instead, with why.
+#[test]
+fn a_program_that_keeps_64_lanes_does_not_translate_for_32_lane_waves() {
+    let empty_bytes = crate::dxbc::build(&[]);
+    let empty = crate::Container::parse(&empty_bytes).unwrap();
+    let native = native(&[]);
+    let p = ir::build(&native.code, native.wave64, native.vgprs).expect("ir::build");
+    let st = structure::structure(&p).expect("structure");
+    let io = io::raise(&p, &native).expect("io");
+    let res = resource::track(&p, &native.layout, native.stage, Some(&st)).expect("res");
+    let shader = super::emit(&empty, &native, &p, &st, &io, &res).expect("emit");
+    let on = |lanes: u32, wave: Option<u32>| {
+        lower::TEST_HOST_WAVE.with(|cell| {
+            let was = cell.replace(Some(lanes));
+            let r = super::host_wave((shader.clone(), wave));
+            cell.set(was);
+            r
+        })
+    };
+    assert!(matches!(
+        on(32, Some(64)),
+        Err(ShaderError::Unsupported { what, .. }) if what == super::WAVE64_ON_WAVE32
+    ));
+    assert!(on(64, Some(64)).is_ok());
+    assert!(on(32, Some(32)).is_ok());
+    assert!(on(32, None).is_ok());
+}
