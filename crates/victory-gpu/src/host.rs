@@ -1937,8 +1937,9 @@ pub(crate) fn late() -> bool {
     late_stage() > 0
 }
 
-/// `VICTORY_LATE_WAIT`: 0 (off), 1, or 2 ([`late_exact`]).
-fn late_stage() -> u8 {
+/// `VICTORY_LATE_WAIT`: 0 (off), 1 (the default), 2 ([`late_exact`]) or 3.
+/// Measured on the prologue: 2.84 frames a second against 2.23 off.
+pub(crate) fn late_stage() -> u8 {
     static STAGE: OnceLock<u8> = OnceLock::new();
     *STAGE.get_or_init(|| {
         if std::env::var_os("VICTORY_GPU_TIMING").is_some() {
@@ -1950,6 +1951,7 @@ fn late_stage() -> u8 {
             Ok("3") => 3,
             // The relay alone: on top of stage 3.
             Err(_) if crate::shadow::relay() => 3,
+            Err(_) => 1,
             _ => 0,
         }
     })
