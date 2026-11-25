@@ -648,6 +648,8 @@ fn a_lane_write_reaches_its_lane_outside_exec() {
         assert_eq!(got, expected, "s0 = {s0}");
     }
     eprintln!("ran on the hardware device: v_writelane_b32 reaches lane 0 outside EXEC");
+}
+
 /// A console wave32 pixel shader run on a GPU that launches pixel shaders in
 /// 64-lane waves (AMD RDNA). Each 32-lane half must keep its own lane index
 /// (`v_mbcnt_lo`), ballot (`s_ff1`), lane read (`v_readlane_b32`) and

@@ -451,7 +451,7 @@ fn skipped_shader(p: &Pipeline) -> Option<&str> {
 }
 
 /// The first of `shaders` that `VICTORY_SKIP_PIPELINES` lists, if any.
-#[cfg(all(windows, feature = "diagnostics"))]
+#[cfg(windows)]
 fn skipped_among(shaders: &[Arc<Shader>]) -> Option<&str> {
     static HASHES: OnceLock<Vec<String>> = OnceLock::new();
     let hashes = HASHES.get_or_init(|| {

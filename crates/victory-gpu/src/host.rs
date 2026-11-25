@@ -3114,6 +3114,21 @@ impl Host {
         })
     }
 
+    /// Whether the host runs shader model 6.6 (on Windows 10 only with the
+    /// Agility SDK runtime).
+    pub(crate) fn shader_model_6_6(&self) -> bool {
+        let mut model = D3D12_FEATURE_DATA_SHADER_MODEL {
+            HighestShaderModel: D3D_SHADER_MODEL_6_6,
+        };
+        // SAFETY: the query writes its own structure of the given size.
+        let ok = unsafe {
+            self.device
+                .CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, (&raw mut model).cast(), size_of_val(&model) as u32)
+                .is_ok()
+        };
+        ok && model.HighestShaderModel.0 >= D3D_SHADER_MODEL_6_6.0
+    }
+
     /// A new list, open for recording.
     pub(crate) fn new_list(&self) -> windows::core::Result<HostList> {
         #[cfg(feature = "diagnostics")]

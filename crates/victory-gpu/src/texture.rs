@@ -1239,8 +1239,8 @@ mod title_memory_tests {
 
             let mut read = vec![0; 2 * PAGE];
             {
-                let _remapping = crate::watch::title_memory_remapping();
-                assert!(crate::watch::title_memory_reading_now().is_none());
+                let _remapping = crate::watch::title_memory_remapping(base as usize, 2 * PAGE);
+                assert!(crate::watch::title_memory_reading_now(base as usize, 2 * PAGE).is_none());
                 assert!(!crate::host::read_into(base, &mut read));
 
                 let second = base.add(PAGE);

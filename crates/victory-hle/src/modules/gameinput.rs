@@ -1235,7 +1235,7 @@ mod host {
             // SAFETY: a valid vibration; an empty slot just fails.
             unsafe { XInputSetState(slot as u32, &speeds) };
             if let Some(id) = self.hid_slots[slot] {
-                self.hid.rumble(id, low, high);
+                self.hid.rumble(id, speeds.wLeftMotorSpeed, speeds.wRightMotorSpeed);
             }
         }
     }
