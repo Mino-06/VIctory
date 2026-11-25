@@ -269,6 +269,7 @@ cargo build --profile diag -p victory --features diagnostics   # target\diag\vic
 | `VICTORY_CAPTURE=<dir>` | saves presented frames (powers of two, or `VICTORY_CAPTURE_FRAMES=<list>`) |
 | `VICTORY_CAPTURE_SYNC=1` | finishes each presented frame's PNG before presenting it (normally PNG encoding runs on a worker) |
 | `VICTORY_DUMP_TARGETS=1` | with the two above, saves every render target of those frames |
+| `VICTORY_SHADER_DIAG=<dir>` | one JSONL record per pipeline classification to `<dir>/shader-diag.jsonl`: shader translation, root signature, mesh/graphics/compute pipeline creation and known partial-support shortcuts (depth bounds test, the rectangle geometry stage, unimplemented device methods), each with the shaders involved and whatever detail (graphics state, host error) was on hand |
 | `VICTORY_D3D12_DEBUG=1` | host debug layer |
 | `VICTORY_D3D12_GBV=1` | with the above, GPU-based validation (bad descriptor use reported, not faulted; slow) |
 | `VICTORY_D3D12_DRED=1` | on a GPU failure, the allocation hit and the commands in flight |
