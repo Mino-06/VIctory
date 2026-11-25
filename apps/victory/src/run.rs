@@ -49,7 +49,15 @@ pub fn run(
         HostPolicy::default()
     });
     let wanted = |dll: &str| title_dll(&resolver.host, dll);
-    let title_dir = exe.parent().unwrap_or(Path::new("."));
+    let beside_exe = exe.parent().unwrap_or(Path::new("."));
+    // An executable kept apart from its package: the package is the
+    // configured game folder, where the title's DLLs and data are.
+    let has_manifest = |dir: &Path| dir.join("MicrosoftGame.config").is_file();
+    let title_dir = match &cfg.game_dir {
+        Some(dir) if !has_manifest(beside_exe) && has_manifest(dir) => dir.as_path(),
+        _ => beside_exe,
+    };
+    println!("title dir      {}", title_dir.display());
     // A missing manifest leaves id 0 and no storage quota.
     let manifest =
         std::fs::read_to_string(title_dir.join("MicrosoftGame.config")).unwrap_or_default();
