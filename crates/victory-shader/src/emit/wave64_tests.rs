@@ -745,6 +745,7 @@ fn wave32_pixel_shader_runs_as_32_lane_halves_on_wave64_hosts() {
         cols: 4,
         usage: 0x3,
         half: false,
+        packed: false,
     };
     let target = SigElement {
         name: "SV_Target".into(),
@@ -757,6 +758,7 @@ fn wave32_pixel_shader_runs_as_32_lane_halves_on_wave64_hosts() {
         cols: 4,
         usage: 0xF,
         half: false,
+        packed: false,
     };
     let lowered = lower::lower(&lower::Parts {
         native: &native,
@@ -830,6 +832,7 @@ fn wave32_pixel_shader_runs_as_32_lane_halves_on_wave64_hosts() {
             cols: 4,
             usage: 0xF,
             half: false,
+            packed: false,
         };
         let vl = lower::lower(&lower::Parts {
             native: &vn,
