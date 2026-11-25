@@ -44,6 +44,8 @@ const E_OUTOFMEMORY: HRESULT = 0x8007_000E_u32 as i32;
 const END_OF_FILE: HRESULT = 0x8007_0026_u32 as i32;
 /// `HRESULT_FROM_WIN32(ERROR_INVALID_DATA)`: a bad compressed stream.
 const INVALID_DATA: HRESULT = 0x8007_000D_u32 as i32;
+/// `ERROR_INVALID_USER_BUFFER`: the kernel could not write the destination.
+const INVALID_USER_BUFFER: HRESULT = 0x8007_06F8_u32 as i32;
 
 type Out = *mut *mut c_void;
 
@@ -832,6 +834,22 @@ fn execute(request: &Request) -> Result<(), HRESULT> {
         }
         let size = request.source_size as usize;
         return into_destination(request, size, |out| read_into(request, out).map(|()| size))
+            .or_else(|hr| match hr {
+                // The kernel refused the title's pages (a guard put back
+                // between opening and reading, or pages it could not lock
+                // while memory is short): read beside them and copy, which
+                // goes through the guard's handler. The title asserted on
+                // such a failed read in the prologue (runs ss1, cin1).
+                INVALID_USER_BUFFER => {
+                    let source = read_source(request)?;
+                    into_destination(request, size, |out| {
+                        out.copy_from_slice(&source[..size]);
+                        Ok(size)
+                    })
+                    .inspect(|()| tracing::info!(size, "dstorage: a read landed through a buffer"))
+                }
+                hr => Err(hr),
+            })
             .map_err(|hr| fail(hr, "copying"));
     }
     let tables = if bc != 0 { Some(bcpack_tables()?) } else { None };
