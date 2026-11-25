@@ -1297,13 +1297,36 @@ thread_local! {
     pub(super) static TEST_HOST_WAVE: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
 }
 
-pub(super) fn reads_mask_as_data(st: &Structured, i: &Inst) -> bool {
+/// The values that hold a lane mask on some path: the masks, and every join one of whose
+/// incoming values does (directly or through other joins). A register holding a mask on one
+/// path and a number on the other (#356: `s_mov_b32 s20, vcc_lo` on one side, `5` on the
+/// other) is still the mask's bits where that path ran, so reading it as data depends on the
+/// lane layout.
+pub(super) fn mask_values(p: &Program, st: &Structured) -> HashSet<Value> {
+    let mut masks: HashSet<Value> = st.masks.keys().chain(st.highs.keys()).copied().collect();
+    let phis: Vec<_> = p.blocks.iter().flat_map(|b| &b.phis).collect();
+    let mut grew = true;
+    while grew {
+        grew = false;
+        for phi in &phis {
+            if !masks.contains(&phi.value) && phi.args.iter().any(|a| masks.contains(a)) {
+                masks.insert(phi.value);
+                grew = true;
+            }
+        }
+    }
+    masks
+}
+
+/// Whether `i` reads a lane mask as a number; `masks` is [`mask_values`] of the program.
+pub(super) fn reads_mask_as_data(st: &Structured, masks: &HashSet<Value>, i: &Inst) -> bool {
     let is_mask = |v: Value| st.masks.contains_key(&v) || st.highs.contains_key(&v);
     if matches!(i.fields, Fields::Sop { .. })
         && i.read(Reg::Scc).is_some_and(|v| st.scc_some.contains_key(&v))
     {
         return true;
     }
+    let holds_mask = |v: Value| masks.contains(&v);
     let ops: Vec<&Operand> = match &i.fields {
         // A mask operation (its result a mask) is no data use.
         Fields::Sop { .. }
@@ -1322,7 +1345,9 @@ pub(super) fn reads_mask_as_data(st: &Structured, i: &Inst) -> bool {
         _ => return false,
     };
     ops.into_iter().any(|op| match *op {
-        Operand::Scalar { code, .. } if code != NULL => i.read(Reg::S(code)).is_some_and(is_mask),
+        Operand::Scalar { code, .. } if code != NULL => {
+            i.read(Reg::S(code)).is_some_and(holds_mask)
+        }
         _ => false,
     })
 }
@@ -1513,6 +1538,7 @@ impl<'a> Lower<'a> {
         s.inputs = x.inputs.clone();
         s.outputs = x.outputs.clone();
         let insts = || p.blocks.iter().flat_map(|b| &b.insts);
+        let masks = mask_values(p, x.st);
         let writes_uavs = insts().any(|i| {
             matches!(i.fields, Fields::Image { .. } | Fields::Buffer { .. })
                 && (i.name().contains("store") || i.name().contains("atomic"))
@@ -1547,7 +1573,7 @@ impl<'a> Lower<'a> {
                     || n.starts_with("v_mbcnt")
                     || matches!(n, "v_readlane_b32" | "v_writelane_b32")
                     || matches!(&i.fields, Fields::Valu(v) if v.dpp.is_some())
-                    || reads_mask_as_data(x.st, i)
+                    || reads_mask_as_data(x.st, &masks, i)
             }) || scc_phi_mask
                 || lane_constant_masks(x.st)
                 // (a branch the wave takes together asks the wave)
@@ -1570,7 +1596,7 @@ impl<'a> Lower<'a> {
                         || matches!(n, "v_readlane_b32" | "v_writelane_b32")
                         || n.starts_with("ds_permute")
                         || n.starts_with("ds_bpermute")
-                        || reads_mask_as_data(x.st, i)
+                        || reads_mask_as_data(x.st, &masks, i)
                 }) || scc_phi_mask
                     || lane_constant_masks(x.st)
                     || !x.st.wide.is_empty();
@@ -1638,7 +1664,7 @@ impl<'a> Lower<'a> {
                             "v_writelane"
                         } else if n.starts_with("ds_permute") || n.starts_with("ds_bpermute") {
                             "ds_(b)permute"
-                        } else if reads_mask_as_data(x.st, i) {
+                        } else if reads_mask_as_data(x.st, &masks, i) {
                             "mask as data"
                         } else {
                             continue;
@@ -13035,24 +13061,21 @@ mod tests {
         let mut shader = shader.unwrap();
         assert_eq!(shader.wave_size, Some(32));
         assert!(shader.wave_ops);
-        for result in [masked, untracked] {
-            assert!(matches!(
-                result,
-                Err(crate::ShaderError::Unsupported {
-                    what: "an opposite-row permutation without full lane participation",
-                    ..
-                })
-            ));
+        // Lanes off in the opposite row, and fetch-inactive / bound-control,
+        // take the general row permutation, which models inactive sources
+        // (`permlane_rows_and_inactive_sources` checks it on the card).
+        let [fetch_inactive, bound_control, op_sel2, clamp] = controls;
+        for result in [masked, untracked, fetch_inactive, bound_control] {
+            assert_eq!(result.expect("translates").wave_size, Some(32));
         }
-        for result in controls {
-            assert!(matches!(
-                result,
-                Err(crate::ShaderError::Unsupported {
-                    what: "unsupported opposite-row permutation controls",
-                    ..
-                })
-            ));
-        }
+        assert!(matches!(
+            op_sel2,
+            Err(crate::ShaderError::Unsupported { what: "permlane input modifiers", .. })
+        ));
+        assert!(matches!(
+            clamp,
+            Err(crate::ShaderError::Unsupported { what: "integer output modifiers", .. })
+        ));
         #[cfg(windows)]
         if let Ok(mut v) = super::super::validator::Validator::load(
             super::super::validator::Validator::default_path().as_deref(),
