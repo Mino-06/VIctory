@@ -428,6 +428,12 @@ fn parse_skip_hashes(value: &str) -> Vec<String> {
 
 #[cfg(windows)]
 fn skipped_shader(p: &Pipeline) -> Option<&str> {
+    skipped_among(&p.shaders)
+}
+
+/// The first of `shaders` that `VICTORY_SKIP_PIPELINES` lists, if any.
+#[cfg(all(windows, feature = "diagnostics"))]
+fn skipped_among(shaders: &[Arc<Shader>]) -> Option<&str> {
     static HASHES: OnceLock<Vec<String>> = OnceLock::new();
     let hashes = HASHES.get_or_init(|| {
         let value = std::env::var("VICTORY_SKIP_PIPELINES").unwrap_or_default();
@@ -436,7 +442,7 @@ fn skipped_shader(p: &Pipeline) -> Option<&str> {
     if hashes.is_empty() {
         return None;
     }
-    p.shaders
+    shaders
         .iter()
         .find(|shader| hashes.contains(&shader.hash))
         .map(|shader| shader.hash.as_str())
@@ -503,8 +509,17 @@ fn hand_out(
     tracing::trace!(?shaders, "pipeline state");
     #[cfg(windows)]
     let host = Arc::new(make::Pending::new(shaders.clone(), graphics));
+    // A skipped pipeline is not started early either: its draws never ask
+    // for it, and its compile can be why it is skipped (one the driver's
+    // compiler never finishes grows the process until it runs out).
+    #[cfg(all(windows, feature = "diagnostics"))]
+    let skipped = skipped_among(&shaders).is_some();
+    #[cfg(all(windows, not(feature = "diagnostics")))]
+    let skipped = false;
     #[cfg(windows)]
-    make::early(&host);
+    if !skipped {
+        make::early(&host);
+    }
     #[cfg(windows)]
     let builder = of_builder(&shaders);
     #[cfg(windows)]
