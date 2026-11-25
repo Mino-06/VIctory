@@ -3630,6 +3630,7 @@ float4 lit() : SV_Target { return 1.0; }
     #[test]
     fn host_texture_drops_unsupported_uav_and_rt_flags() {
         use windows::Win32::Graphics::Direct3D12::*;
+        use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_R9G9B9E5_SHAREDEXP, DXGI_FORMAT_R16G16B16A16_FLOAT};
         let Some(host) = crate::host::host() else {
             return; // no host GPU here
         };
@@ -3647,18 +3648,25 @@ float4 lit() : SV_Target { return 1.0; }
             flags,
         };
         // R9G9B9E5_SHAREDEXP (67) with ALLOW_RENDER_TARGET | ALLOW_UNORDERED_ACCESS (5)
-        // and a non-null clear value: PC GPUs refuse both RT and typed UAV on this
-        // format; dropping both flags and omitting pOptimizedClearValue lets
-        // CreateCommittedResource succeed without id=599 / id=815, and Host::rtv
-        // returns None instead of triggering 0x887A0001.
+        // and a clear value: a host that refuses RT or typed UAV on this format
+        // gets the FP16 stand-in (`target_format`), which keeps both uses; a
+        // host without a stand-in gets the format with both flags dropped.
+        // Either way the texture is made, with no flag its format refuses.
         let clear = [67u32, 0, 0, 0, 0];
         let shared_exp = host_texture(&make(67, 5), 0, clear.as_ptr().cast())
-            .expect("R9G9B9E5_SHAREDEXP texture should succeed with unsupported flags dropped");
+            .expect("an R9G9B9E5_SHAREDEXP target is made");
         // SAFETY: live D3D12 resource.
         let d = unsafe { shared_exp.GetDesc() };
-        assert_eq!(d.Flags.0 & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS.0, 0);
-        assert_eq!(d.Flags.0 & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET.0, 0);
-        assert!(host.rtv(Some(&shared_exp), None).is_none());
+        let uav = d.Flags.0 & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS.0 != 0;
+        let rt = d.Flags.0 & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET.0 != 0;
+        if d.Format == DXGI_FORMAT_R16G16B16A16_FLOAT {
+            assert!(uav && rt, "the FP16 stand-in keeps both uses");
+            assert!(host.rtv(Some(&shared_exp), None).is_some());
+        } else {
+            assert_eq!(d.Format, DXGI_FORMAT_R9G9B9E5_SHAREDEXP);
+            assert!(!uav && !rt, "flags the host refuses are dropped");
+            assert!(host.rtv(Some(&shared_exp), None).is_none());
+        }
 
         // R8G8B8A8_TYPELESS (27) with flags=5 must keep ALLOW_UNORDERED_ACCESS.
         let typeless = host_texture(&make(27, 5), 0, std::ptr::null())
