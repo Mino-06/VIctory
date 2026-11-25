@@ -243,3 +243,14 @@ cached, #1845 dword 1/5 and masks, #1890 `split.rs` behind
 3. White over-exposure in the cinematic: likely the refused compute
    pipelines (exposure); check after shader-gaps lands.
 4. Go past the prologue: script movement (W held, look, run) and long runs.
+
+## Pass 9: session branches merged (not yet tested together)
+
+- Merged `claude/shader-gaps-95823e` (compute shaders failing to translate
+  in wave-32 mode: 65 -> 10; the 43 refused pipelines now fail translation
+  with their real reason, still dropped) and `claude/slow-compiles-598521`
+  (mesh compile 2-4 % faster, `translate --pipelines` timing harness).
+- chain2 prime2 (INDIRECT_WINDOW + LATE_WAIT, new binary, retranslating):
+  2.05 fps, load 134 s, GPU 43 ms/frame, no crash. cw0/cw3 still running.
+- TODO first: `cargo test --release --workspace` on the merged tree (the
+  shader-gaps worktree could not run 39 on-card tests).
