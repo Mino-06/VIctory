@@ -11,6 +11,9 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 
 const MAX_FILE_SIZE: usize = 512 * 1024;
+/// Hand-written Rust source: the shader lowering outgrew the general limit.
+/// The content checks below still apply to it.
+const MAX_RUST_SIZE: usize = 1024 * 1024;
 const MAX_ENCODED_RUN: usize = 512;
 
 const ALLOWED_EXTENSIONS: &[&str] = &[
@@ -25,6 +28,7 @@ const ALLOWED_NAMES: &[&str] = &[
     "LICENSE",
     "LICENSE-MIT",
     "LICENSE-APACHE",
+    "NOTICE",
 ];
 
 /// Paths explicitly exempted, with a reason. Keep this empty if at all possible.
@@ -154,11 +158,9 @@ pub fn check(path: &str, content: &[u8]) -> Vec<String> {
     if !allowed {
         problems.push("file type not on the allowlist".to_owned());
     }
-    if content.len() > MAX_FILE_SIZE {
-        problems.push(format!(
-            "{} bytes exceeds the {MAX_FILE_SIZE}-byte limit",
-            content.len()
-        ));
+    let limit = if ext.as_deref() == Some("rs") { MAX_RUST_SIZE } else { MAX_FILE_SIZE };
+    if content.len() > limit {
+        problems.push(format!("{} bytes exceeds the {limit}-byte limit", content.len()));
     }
     for (magic, what) in FORBIDDEN_MAGIC {
         if content.starts_with(magic) {
@@ -209,10 +211,11 @@ mod tests {
             !check("data.bin", b"hello").is_empty(),
             "extension not allowed"
         );
-        assert!(
-            !check("a.rs", &vec![b'a'; 600 * 1024]).is_empty(),
-            "too big"
-        );
+        let lines = |kib: usize| b"x
+".repeat(kib * 512);
+        assert!(!check("a.txt", &lines(600)).is_empty(), "too big");
+        assert!(check("a.rs", &lines(600)).is_empty(), "Rust source has a larger limit");
+        assert!(!check("a.rs", &lines(1100)).is_empty(), "too big even for Rust source");
     }
 
     #[test]

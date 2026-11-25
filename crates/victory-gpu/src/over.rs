@@ -62,7 +62,7 @@ unsafe impl Send for Pass {}
 static PASS: Mutex<Option<Pass>> = Mutex::new(None);
 
 fn make(device: &ID3D12Device, format: DXGI_FORMAT) -> windows::core::Result<Pass> {
-    use windows::core::s;
+
     let vs = crate::host::compile(SOURCE, "corner", "vs_5_1")?;
     let ps = crate::host::compile(SOURCE, "over", "ps_5_1")?;
     let code = |bytes: &[u8]| D3D12_SHADER_BYTECODE {
@@ -279,7 +279,7 @@ static STRETCHER: Mutex<Option<Stretch>> = Mutex::new(None);
 const STRETCH_RING: u32 = 64;
 
 fn make_stretch(device: &ID3D12Device) -> windows::core::Result<Stretch> {
-    use windows::core::s;
+
     let cs = crate::host::compile(STRETCH, "stretch", "cs_5_1")?;
     // SAFETY: the root signature is inside the shader; the description
     // points at live data and never releases its pointer.
