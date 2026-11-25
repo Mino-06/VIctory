@@ -254,3 +254,24 @@ cached, #1845 dword 1/5 and masks, #1890 `split.rs` behind
   2.05 fps, load 134 s, GPU 43 ms/frame, no crash. cw0/cw3 still running.
 - TODO first: `cargo test --release --workspace` on the merged tree (the
   shader-gaps worktree could not run 39 on-card tests).
+
+## Pass 10: compute wait verified, merged tree tested
+
+- chain2 (INDIRECT_WINDOW + LATE_WAIT on, warm cache): cw0 (compute wait
+  off) 2.87 fps, load 84 s; cw3 (3 s compute wait, the default) 2.95 fps,
+  load 83 s. The wait costs nothing in frame rate: kept on.
+- Merged tree: `cargo test --release --workspace` 715 passed, 0 failed.
+- The 43 refused compute pipelines (session shader-gaps): no exact 32-lane
+  form, so the 64-lane original with `WaveSize=64` reached the driver,
+  which the RTX 3090 refuses. They now fail translation with that reason.
+  `VICTORY_WAVE_LDS_SYNC=1` makes 40 of 43 create, approximately (a
+  half-wave may read LDS before the other wrote it). It is part of the
+  shader cache key. Queued: chain4 (prime, then a measured run with
+  captures) to judge it on screen.
+- Captures are now on-screen copies of the title's window (it sits on top
+  of its screen); `PrintWindow` gave stale frames. chain3: vis_on / vis_off
+  for a visual check of INDIRECT_WINDOW + LATE_WAIT.
+- Found by shader-gaps, not fixed: `lds_lane_private` (`lower.rs`) treats
+  some LDS accesses as private per lane when they are not (neighbour reads
+  like `lds[t+1]`, uniform addresses); ~117 lowerings run as two 32-lane
+  waves with no ordering. Notes in the session's `shader-gaps.md`.
