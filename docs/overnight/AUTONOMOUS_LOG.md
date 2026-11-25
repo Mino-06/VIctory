@@ -324,3 +324,41 @@ cached, #1845 dword 1/5 and masks, #1890 `split.rs` behind
 - `VICTORY_LATE_WAIT` defaults to 1 (unset means on; `0` turns it off). Prologue A/B: 2.84 fps on, 2.23 fps off.
 - `buffer_data_reaches_the_host_texture` failed under late waits only in the full suite. It asserted a refcount that a settle on another test's thread may already have dropped once the card ran the list. That assertion now runs only without late waits. Suite: 715 passed, 0 failed.
 - chain7 measures `VICTORY_WIDE_MERGE=1`, `VICTORY_JOIN_COPIES=1` and `VICTORY_RELAY=2` against references. `ref7` (2.13 fps) ran while the test suite was building, so it is not a clean reference; `ref7b` closes the chain.
+
+## Pass 15: where the frame goes (measured, warm cache, prologue, 420 s runs)
+
+| Run | Switch | fps | prep | copies | gpu | back |
+|---|---|---|---|---|---|---|
+| ref7b | (late 1, indirect) | 2.75 | 186 | 86 | 56 | 43 |
+| wm7 | WIDE_MERGE=1 | 2.17 | 187 | 108 | 58 | 34 |
+| join7 | JOIN_COPIES=1 | 2.70 | 205 | 90 | 55 | 42 |
+| relay7 | RELAY=2 | 2.87 | 186 | 98 | 78 | 43 |
+| ref11 | — | 2.45 | 155 | 73 | 69 | 52 |
+| late2 | LATE_WAIT=2 | 2.58 | 179 | 90 | 52 | 51 |
+| late3 | LATE_WAIT=3 | 2.63 | 157 | 68 | 41 | 53 |
+| ref12 | — | 2.55 | 171 | 84 | 67 | 52 |
+| wb12 | WIDE_BACK=1 | 2.55 | 178 | 85 | 68 | 52 |
+| wt12 | WIDE_THREADS=8 | 2.52 | 216 | 131 | 68 | 51 |
+| all12 | WIDE_BACK+THREADS=8+MERGE | 2.64 | 173 | 97 | 65 | 37 |
+
+Run-to-run noise is about ±10 %. No switch moves the frame beyond it, so no default changed. Eight helper threads make copies slower (contention), so the pool stays at 4.
+
+Why: the frame's critical path is the title's submitting thread. Per frame (~260 ms late in the run, 3.8-4.0 fps) it is roughly:
+- 120 ms of its own CPU inside submissions: preparing (copies about 50 ms for 146 MB of 64 KiB pages, textures 5-12 ms), sync_heaps, sweep and the rest;
+- about 50 ms waiting for the card in settles (stage 2 moves the wait from "title memory changed under shader writes" to the present; stage 3 moves it again);
+- about 40 ms copying back (62 MB);
+- about 15-25 ms of the title's own time between submissions.
+
+The card is only about 39 % busy: it idles while the submitting thread prepares.
+
+List recording (title render threads, 5 in parallel, 411 ms of CPU a frame in all) is not on that path. Its cost is mostly binding:
+- ExecuteIndirect: 4,900 a frame, 39 µs each, 193 ms.
+- Dispatch: 3,700 a frame, 45 µs each, 168 ms.
+
+Of the binding:
+- Tables: 228 ms. Views made in fresh tables 71 ms; buffer copy lookups and refreshes 68 ms; texture-written checks 30-46 ms; fresh tables found made 42 ms; from the title's slots 97 ms (readable included).
+- Root views: 130 ms, mostly the once-a-frame heap pass, about 100 ms. The heap pass looks at about 40,000 slots a frame. A third of them hold the view they held, and those are now skipped (7316e05).
+
+Commits: a517ecc (late waits by default), 7316e05 (heap pass), 44e3918 (statistics, compiled out without diagnostics).
+
+What would move the frame (future work, each a design change): overlap preparation of submission N+1 with the card running N (the card idles 150 ms a frame); 4 KiB dirty tracking for the hottest buffers (146 MB of copies a frame); a cross-list cache of fresh tables.
