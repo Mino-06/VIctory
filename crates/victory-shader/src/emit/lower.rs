@@ -3063,9 +3063,11 @@ impl<'a> Lower<'a> {
     /// `SLOT_MEMORY`): the handle of the raw view of the host copy holding
     /// it and the byte in that view. A page without a copy reads zeros
     /// (and drops writes) through the null view at the first slot, and its
-    /// number is left for the host, for lanes that run (`guard`). Leaves
-    /// `self.cur` at the join after reporting the fault.
-    fn memory(&mut self, lo: V, hi: V, guard: Option<V>) -> (V, V) {
+    /// number is left for the host, for lanes that run (`guard`). An
+    /// access that writes (`store`) also marks its copy for the host
+    /// (`shader.rs` `MEMORY_MARKS`), for lanes that run. Leaves `self.cur`
+    /// at the join after reporting the fault.
+    fn memory(&mut self, lo: V, hi: V, guard: Option<V>, store: bool) -> (V, V) {
         use super::shader::{MEMORY_FAULTS, MEMORY_PAGES, SLOT_FAULTS, SLOT_MEMORY, USER_MEMORY_BASE};
         let c = self.cur;
         let (i32t, res) = (self.s.t.i32, self.s.t.res_ret);
@@ -3123,6 +3125,26 @@ impl<'a> Lower<'a> {
             &[faults, place, iu, page, iu, iu, iu, mask, align],
         );
         self.end_guarded(fault, &[]);
+        if store {
+            // The copy's mark, for lanes that run: every lane writes the
+            // same 1, so no atomic is needed. A page without a copy marks
+            // number 0, which is no copy.
+            let marking = self.begin_guarded(guard);
+            let c = self.cur;
+            let faults = self.s.root_uav_handle(SLOT_FAULTS);
+            let first = k(self, MEMORY_FAULTS);
+            let mark = self.s.m.bin(c, Bin::Add, first, copy);
+            let mark = self.s.m.bin(c, Bin::Shl, mark, k2);
+            self.s.op(
+                c,
+                "rawBufferStore.i32",
+                Attr::NoUnwind,
+                void,
+                140,
+                &[faults, mark, iu, one, iu, iu, iu, mask, align],
+            );
+            self.end_guarded(marking, &[]);
+        }
         let c = self.cur;
         let base = self.host_word(RootType::Other(USER_MEMORY_BASE), 0, 0);
         let slot = self.s.m.bin(c, Bin::Add, base, copy);
@@ -3178,7 +3200,7 @@ impl<'a> Lower<'a> {
             let Some(Operand::Vector { reg, .. }) = *dst else {
                 return Err("a global load result");
             };
-            let (h, byte) = self.memory(lo, hi, guard);
+            let (h, byte) = self.memory(lo, hi, guard, false);
             let c = self.cur;
             let mask = self.s.m.i8((1u8 << n) - 1);
             let r = self.s.op(
@@ -3200,7 +3222,7 @@ impl<'a> Lower<'a> {
             let n = count(rest)?;
             let d = data.as_ref().ok_or("global store data")?;
             let vals = self.vgprs(inst, d, n)?;
-            let (h, byte) = self.memory(lo, hi, guard);
+            let (h, byte) = self.memory(lo, hi, guard, true);
             let mut args = vec![h, byte, iu];
             args.extend(&vals);
             args.resize(3 + 4, iu);
@@ -3227,7 +3249,7 @@ impl<'a> Lower<'a> {
             Some(x) => self.i32_of(x)?,
             None => self.s.m.i32(0),
         };
-        let (h, byte) = self.memory(lo, hi, guard);
+        let (h, byte) = self.memory(lo, hi, guard, true);
         let c = self.cur;
         // DXIL's atomic operations: add 0, and 1, or 2, xor 3, signed
         // minimum 4 and maximum 5, unsigned 6 and 7, exchange 8.
@@ -3362,7 +3384,7 @@ impl<'a> Lower<'a> {
         for first in (0..count).step_by(4) {
             let n = (count - first).min(4);
             let (lo, hi) = self.address_plus(lo, hi, offset + 4 * i32::from(first));
-            let (h, byte) = self.memory(lo, hi, None);
+            let (h, byte) = self.memory(lo, hi, None, false);
             let c = self.cur;
             let mask = self.s.m.i8((1u8 << n) - 1);
             let r = self.s.op(
