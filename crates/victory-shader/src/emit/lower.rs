@@ -1121,7 +1121,37 @@ fn lds_lane_private(p: &crate::ir::Program) -> bool {
     true
 }
 
+/// `VICTORY_WAVE_LDS_SYNC=1`: where [`lds_meetings`] refuses a program (an LDS read and
+/// write in one lane-branch region), split it all the same, upstream #1890's `lds_sync`
+/// way: the host waves meet only in blocks the whole group runs together (all-lane blocks
+/// that [`super::split::convergent`] also finds convergent) and around the regions;
+/// inside a region a half may read what the other half writes there early. Off by default.
+fn lds_sync_on() -> bool {
+    #[cfg(test)]
+    if let Some(on) = TEST_LDS_SYNC.get() {
+        return on;
+    }
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VICTORY_WAVE_LDS_SYNC").is_some_and(|v| v == "1"))
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static TEST_LDS_SYNC: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
 fn lds_meetings(p: &crate::ir::Program, st: &Structured, all: &[bool]) -> Option<Vec<(bool, bool)>> {
+    lds_meetings_with(p, st, all, false)
+}
+
+/// [`lds_meetings`]; with `mixed`, a region that both reads and writes LDS is no refusal
+/// (the [`lds_sync_on`] fallback).
+fn lds_meetings_with(
+    p: &crate::ir::Program,
+    st: &Structured,
+    all: &[bool],
+    mixed: bool,
+) -> Option<Vec<(bool, bool)>> {
     let n = st.exits.len();
     let succ = |b: usize| -> Vec<usize> {
         match st.exits[b] {
@@ -1167,7 +1197,7 @@ fn lds_meetings(p: &crate::ir::Program, st: &Structured, all: &[bool]) -> Option
             }
         }
     }
-    if (0..n).any(|r| reads[r] && writes[r]) {
+    if !mixed && (0..n).any(|r| reads[r] && writes[r]) {
         if std::env::var_os("VICTORY_WAVE_DUMP").is_some() {
             for r in 0..n {
                 if reads[r] && writes[r] {
@@ -1938,6 +1968,21 @@ impl<'a> Lower<'a> {
                         if !lds_ok && let Some(meet) = lds_meetings(p, x.st, &all) {
                             lds_meet = Some((all.clone(), meet));
                             lds_ok = true;
+                        }
+                        // (`VICTORY_WAVE_LDS_SYNC=1`: the regions mix reads and writes)
+                        let mut all = all;
+                        if !lds_ok && lds_sync_on() {
+                            let together = super::split::convergent(x.st, one_wave);
+                            for (a, t) in all.iter_mut().zip(together) {
+                                *a &= t;
+                            }
+                            if let Some(meet) = lds_meetings_with(p, x.st, &all, true) {
+                                eprintln!(
+                                    "WAVE64-LDS-SYNC group={group}: LDS read and written in one lane-branch region, split without ordering there"
+                                );
+                                lds_meet = Some((all.clone(), meet));
+                                lds_ok = true;
+                            }
                         }
                         if !lds_ok {
                             // (the blocks whose LDS accesses not every lane runs: with the
@@ -14243,5 +14288,78 @@ mod tests {
                 validate_lowered(&l);
             }
         }
+    }
+
+    // Upstream #1890 fallback: a one-wave group of 64 on a 32-lane host whose lane branch
+    // both writes and reads LDS (at an address read from LDS) keeps 64-lane waves, unless
+    // `VICTORY_WAVE_LDS_SYNC=1` splits it, the waves meeting around the branch.
+    #[test]
+    fn lds_read_and_written_in_one_lane_branch_splits_only_with_lds_sync() {
+        let words = [
+            0xD8D8_0000,
+            0x0100_0000, // ds_read_b32 v1, v0 (an address read from LDS)
+            0x7D88_0081, // v_cmp_gt_u32_e32 vcc, 1, v0
+            0xBE86_246A, // s_and_saveexec_b64 s[6:7], vcc
+            0xBF88_0004, // s_cbranch_execz -> restore exec
+            0xD834_0000,
+            0x0000_0001, // ds_write_b32 v1, v0
+            0xD8D8_0000,
+            0x0200_0001, // ds_read_b32 v2, v1
+            0xBEFE_0406, // s_mov_b64 exec, s[6:7]
+            0xD834_0000,
+            0x0000_0201, // ds_write_b32 v1, v2
+            S_ENDPGM,
+        ];
+        let run = |sync: bool| {
+            let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let native = NativeProgram {
+                stage: HwStage::Cs,
+                wave64: true,
+                vgprs: 256,
+                layout: vec![],
+                used: vec![],
+                io: StageIo::Cs(ComputeIo {
+                    rsrc2: 1 << 15, // 512 bytes of LDS
+                    threads: [64, 1, 1],
+                }),
+                code,
+            };
+            let p = ir::build(&native.code, true, 256).unwrap();
+            let st = structure::structure(&p).unwrap();
+            let res = resource::track(&p, &native.layout, native.stage, Some(&st)).unwrap();
+            let io = io::raise(&p, &native).unwrap();
+            let wave = super::TEST_HOST_WAVE.replace(Some(32));
+            let lds_sync = super::TEST_LDS_SYNC.replace(Some(sync));
+            let out = lower(&Parts {
+                native: &native,
+                p: &p,
+                st: &st,
+                io: &io,
+                res: &res,
+                inputs: vec![],
+                outputs: vec![],
+                prims: vec![],
+                mesh_stride: 0,
+            });
+            super::TEST_HOST_WAVE.set(wave);
+            super::TEST_LDS_SYNC.set(lds_sync);
+            out.unwrap()
+        };
+        assert_eq!(run(false).wave_size, Some(64), "off by default");
+        let split = run(true);
+        assert_eq!(split.wave_size, Some(32));
+        validate_lowered(&split);
+        // The host waves meet around the branch: before it is entered, after it joins.
+        let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        let p = ir::build(&code, true, 256).unwrap();
+        let st = structure::structure(&p).unwrap();
+        let mut all = super::all_lane_blocks(&st).unwrap();
+        for (a, t) in all.iter_mut().zip(super::super::split::convergent(&st, true)) {
+            *a &= t;
+        }
+        assert_eq!(super::lds_meetings(&p, &st, &all), None);
+        let meet = super::lds_meetings_with(&p, &st, &all, true).unwrap();
+        assert!(meet.iter().any(|m| m.1), "{meet:?}");
+        assert!(meet.iter().any(|m| m.0), "{meet:?}");
     }
 }
