@@ -289,3 +289,13 @@ cached, #1845 dword 1/5 and masks, #1890 `split.rs` behind
   pair: chain5 repeats it warm (vis_off2 then vis_on2) to see whether the
   two switches themselves change the image.
 - lds_prime (VICTORY_WAVE_LDS_SYNC=1, retranslating): 1.90 fps, no crash.
+
+## Pass 12: control handed to the player
+
+- lds (VICTORY_WAVE_LDS_SYNC=1 with INDIRECT_WINDOW + LATE_WAIT, warm):
+  2.54 fps, load 81 s, no crash. vis_off2 (all three off, warm): 2.23 fps.
+  Both render the cinematic correctly; LDS sync shows no visible artefact
+  (`docs/overnight/lds-sync-vs-off.png`, top lds, bottom off).
+- At ~360 s the game shows "Se déplacer / Bouger la caméra": the prologue
+  hands control to the player. Queued chain6: a 600 s run with movement
+  keys after 370 s (W held, camera J/L, Enter), captures every 20 s.
