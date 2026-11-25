@@ -1975,7 +1975,14 @@ impl<'a> Tracer<'a> {
             return Err(SELECT);
         }
         let reach = (lanes.reach[b], true);
-        let meet = |conditions: &[(Bool, bool)]| self.meet(lanes, conditions);
+        // Without the reach first: what no lane meets, no lane that reaches
+        // the loop meets either, and the reach of a large program's block
+        // can be too large to split within `meet`'s budget (which then
+        // answers yes): the loops of large programs went unproven.
+        let meet = |conditions: &[(Bool, bool)]| {
+            let rest: Vec<_> = conditions.iter().copied().filter(|&c| c != reach).collect();
+            self.meet(lanes, &rest) && self.meet(lanes, conditions)
+        };
         let mut out = Waterfall::default();
         let mut required = vec![(remaining, true)];
         for (i, inst) in block.insts[..access].iter().enumerate() {
