@@ -65,6 +65,9 @@ pub(crate) struct Lowered {
     /// Whether the program uses wave operations.
     #[cfg(test)]
     pub wave_ops: bool,
+    /// Number of half-wave LDS exchanges emitted (`exchange_halves`).
+    #[cfg(test)]
+    pub half_exchanges: u32,
 }
 
 pub(crate) struct Parts<'a> {
@@ -242,6 +245,9 @@ struct Lower<'a> {
     flat: Option<V>,
     /// Mesh: IR blocks whose `s_barrier` is left out.
     no_barrier: HashSet<usize>,
+    /// Number of half-wave LDS exchanges emitted (`exchange_halves`).
+    #[cfg(test)]
+    half_exchanges: u32,
     /// IR blocks whose `s_barrier` not every lane is sure to reach (a lane
     /// branch lies between the entry and the block, or the program has a
     /// loop a lane can be cut out of): the barrier there keeps its fences
@@ -601,37 +607,62 @@ fn lane_uniform(p: &Program, st: &Structured, all: &[bool]) -> HashSet<Value> {
                         && v.sdwa.is_none()
                         && !name.starts_with("v_mbcnt")
                         && !name.starts_with("v_cmpx")
-                        && !name.contains("lane") =>
+                        && !name.contains("lane")
+                        && !name.contains("movrel")
+                        && !name.contains("swaprel") =>
                 {
-                    v.src.iter().all(|op| match *op {
-                        Operand::Vector { reg, dwords } => {
-                            // every dword of the operand the instruction reads (not the old value
-                            // of a higher-numbered destination register that IR keeps for guards;
-                            // widen to u16 so operands ending at v255 are not truncated)
-                            let start = u16::from(reg);
-                            let end = start + u16::from(dwords);
-                            let read: Vec<Value> = inst
-                                .reads
-                                .iter()
-                                .filter(|r| {
-                                    matches!(r.0, Reg::V(x) if (start..end).contains(&u16::from(x)))
-                                })
-                                .map(|r| r.1)
-                                .collect();
-                            !read.is_empty() && read.iter().all(|x| same.contains(x))
-                        }
-                        // a scalar is one value; a lane mask is not, unless a compare of such values made it
-                        Operand::Scalar { code, dwords } if code != NULL => {
-                            let start = u16::from(code);
-                            let end = start + u16::from(dwords);
-                            (start..end).all(|c| {
-                                u8::try_from(c)
-                                    .ok()
-                                    .and_then(|c| inst.read(Reg::S(c)))
-                                    .is_none_or(|x| !is_mask(x) || same.contains(&x))
+                    // Check every register the instruction reads, including implicit
+                    // reads (accumulator VGPRs in `v_fmac_*`/`v_mac_*`/`v_dot*c_*`,
+                    // preserved destination halves on 16-bit writes, and implicit `VCC`
+                    // in VOP2 `v_cndmask_b32`/`v_add_co_ci_u32`/`v_div_fmas_f32`).
+                    // Since the instruction is unguarded, skip the implicit `EXEC` mask
+                    // (unless `EXEC` is an explicit source) and the old destination
+                    // VGPR(s) when the instruction fully overwrites them.
+                    let reads_exec_as_src = v.src.iter().any(|op| {
+                        matches!(op, Operand::Scalar { code, .. } if *code == EXEC || *code == EXEC + 1)
+                    });
+                    let reads_dst = name.contains("fmac")
+                        || name.contains("_mac_")
+                        || name.contains("dot2c")
+                        || name.contains("dot4c")
+                        || name.contains("dot8c")
+                        || name.contains("_mixlo_f16")
+                        || name.contains("_mixhi_f16")
+                        || (!name.starts_with("v_pk_")
+                            && !name.starts_with("v_cmp")
+                            && !name.starts_with("v_cvt_f32_")
+                            && !name.starts_with("v_cvt_u32_")
+                            && !name.starts_with("v_cvt_i32_")
+                            && (name.ends_with("_f16")
+                                || name.ends_with("_u16")
+                                || name.ends_with("_i16")
+                                || name.ends_with("_b16")
+                                || name.contains("cvt_f16_")
+                                || name.contains("cvt_u16_")
+                                || name.contains("cvt_i16_")
+                                || name.contains("cvt_norm_i16_")
+                                || name.contains("cvt_norm_u16_")));
+                    let overwritten_dst = |r: u8| {
+                        !reads_dst
+                            && matches!(
+                                v.dst,
+                                Some(Operand::Vector { reg, dwords })
+                                    if (u16::from(reg)..u16::from(reg) + u16::from(dwords)).contains(&u16::from(r))
+                            )
+                            && !v.src.iter().any(|op| {
+                                matches!(
+                                    *op,
+                                    Operand::Vector { reg, dwords }
+                                        if (u16::from(reg)..u16::from(reg) + u16::from(dwords)).contains(&u16::from(r))
+                                )
                             })
-                        }
-                        _ => true,
+                    };
+                    inst.reads.iter().all(|&(reg, val)| match reg {
+                        Reg::V(r) if overwritten_dst(r) => true,
+                        Reg::V(_) => same.contains(&val),
+                        Reg::S(code) if (code == EXEC || code == EXEC + 1) && !reads_exec_as_src => true,
+                        Reg::S(_) => !is_mask(val) || same.contains(&val),
+                        Reg::Scc => true,
                     })
                 }
                 Fields::Ds {
@@ -1556,6 +1587,15 @@ impl<'a> Lower<'a> {
         if let StageIo::Cs(cs) = x.native.io {
             s.threads = Some(cs.threads);
             s.lds_dwords = cs.lds_bytes() / 4;
+            // A non-waterfall `v_readfirstlane_b32` reads across the whole
+            // console wave (waterfall reads lower per-lane directly).
+            let readfirstlane = |i: &Inst| {
+                i.name() == "v_readfirstlane_b32"
+                    && !i
+                        .writes
+                        .first()
+                        .is_some_and(|w| x.res.waterfall.reads.contains(&w.1))
+            };
             // Code reading other lanes needs the console's wave size and
             // lane order; so do lane masks read as numbers, and LDS shared
             // within one wave, where the console compiler leaves out barriers.
@@ -1572,6 +1612,7 @@ impl<'a> Lower<'a> {
                     || n.starts_with("v_permlane")
                     || n.starts_with("v_mbcnt")
                     || matches!(n, "v_readlane_b32" | "v_writelane_b32")
+                    || readfirstlane(i)
                     || matches!(&i.fields, Fields::Valu(v) if v.dpp.is_some())
                     || reads_mask_as_data(x.st, &masks, i)
             }) || scc_phi_mask
@@ -1586,14 +1627,15 @@ impl<'a> Lower<'a> {
             // `ds_swizzle`, `v_permlane16` / `v_permlanex16`, which the ISA confines there – runs
             // exactly in waves of 32: the thread relabelling makes each host wave one half of a
             // console wave (lanes 32k..32k+31). Not when it crosses halves (`v_mbcnt`,
-            // `v_readlane`, `v_writelane`, `ds_(b)permute`, masks as numbers or lane-constant
-            // masks), nor when LDS may be shared within the console wave without barriers (a
-            // group over 32 threads with LDS): those still need 64-lane waves.
+            // `v_readlane`, `v_readfirstlane`, `v_writelane`, `ds_(b)permute`, masks as numbers or
+            // lane-constant masks), nor when LDS may be shared within the console wave without
+            // barriers (a group over 32 threads with LDS): those still need 64-lane waves.
             if wave == 64 && host_uses_wave32() && (console_lanes || one_wave && s.lds_dwords > 0) {
                 let crosses = insts().any(|i| {
                     let n = i.name();
                     n.starts_with("v_mbcnt")
                         || matches!(n, "v_readlane_b32" | "v_writelane_b32")
+                        || readfirstlane(i)
                         || n.starts_with("ds_permute")
                         || n.starts_with("ds_bpermute")
                         || reads_mask_as_data(x.st, &masks, i)
@@ -1660,6 +1702,8 @@ impl<'a> Lower<'a> {
                             "v_mbcnt"
                         } else if n == "v_readlane_b32" {
                             "v_readlane"
+                        } else if readfirstlane(i) {
+                            "v_readfirstlane"
                         } else if n == "v_writelane_b32" {
                             "v_writelane"
                         } else if n.starts_with("ds_permute") || n.starts_with("ds_bpermute") {
@@ -1855,6 +1899,8 @@ impl<'a> Lower<'a> {
             wave_base: None,
             flat: None,
             no_barrier,
+            #[cfg(test)]
+            half_exchanges: 0,
             fence_only,
             half_outputs: half_outputs(&x.native.io, &x.outputs),
             mask_data: match x.native.stage {
@@ -2583,6 +2629,8 @@ impl<'a> Lower<'a> {
             nonuniform_handles: self.s.nonuniform_handles,
             #[cfg(test)]
             wave_ops: self.s.flags & flags::WAVE_OPS != 0,
+            #[cfg(test)]
+            half_exchanges: self.half_exchanges,
             dxil: self.s.finish(),
             user_data,
             samplers: self.samplers,
@@ -4130,6 +4178,10 @@ impl<'a> Lower<'a> {
             return (lo, hi);
         }
         // the pair of dwords of this thread's console wave: its half's, then both
+        #[cfg(test)]
+        {
+            self.half_exchanges += 1;
+        }
         let pair = self.exchange_pair(slot);
         let cl = self.console_lane();
         let five = self.s.m.i32(5);
