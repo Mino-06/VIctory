@@ -362,3 +362,9 @@ Of the binding:
 Commits: a517ecc (late waits by default), 7316e05 (heap pass), 44e3918 (statistics, compiled out without diagnostics).
 
 What would move the frame (future work, each a design change): overlap preparation of submission N+1 with the card running N (the card idles 150 ms a frame); 4 KiB dirty tracking for the hottest buffers (146 MB of copies a frame); a cross-list cache of fresh tables.
+
+## Pass 16: gameplay control
+
+- play2 (20 min, W held for 120 s at a time): the game shows "L Se déplacer / R Bouger la caméra". The camera turns, but the character walks into the window it faces.
+- play3 (20 min, S/A/D, a camera turn, then W): the character turns and moves into the cell room. At 1200 s she is seen in profile, with the lockers and the bars' shadows. Gameplay control works, but slowly: 3.4-3.8 fps, so game time runs in slow motion. 0 crashes in both runs.
+- Next: the frame (see pass 15): overlap preparation with the card; finer dirty tracking for the hottest buffers.
