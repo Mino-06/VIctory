@@ -1201,6 +1201,16 @@ fn lds_meetings(p: &crate::ir::Program, st: &Structured, all: &[bool]) -> Option
     Some(meet)
 }
 
+/// A lane mask operand that is a constant: inline 0 or NULL (no lane), inline -1 (every
+/// lane). Selects and carries read it as such (upstream #1845).
+fn const_mask(op: Option<&Operand>) -> Option<Bool> {
+    match op? {
+        Operand::Scalar { code: NULL, .. } | Operand::Const(128) => Some(Bool::FALSE),
+        Operand::Const(193) => Some(Bool::TRUE),
+        _ => None,
+    }
+}
+
 /// Masks held as numbers or constant lane sets in guards or lane branches: the lane tests its
 /// own bit by its console lane.
 fn lane_constant_masks(st: &Structured) -> bool {
@@ -8688,7 +8698,11 @@ impl<'a> Lower<'a> {
                     _ => None,
                 };
                 const UNTRACKED: Why = "a select on an untracked mask";
-                let cond = match mask.and_then(|m| self.x.st.masks.get(&m).copied()) {
+                // An inline 0 or -1, or NULL (reads 0): no lane or every lane
+                // (upstream #1845).
+                let cond = match const_mask(v.src.get(2)).or_else(|| {
+                    mask.and_then(|m| self.x.st.masks.get(&m).copied())
+                }) {
                     Some(m) => self.boolean(m, c)?,
                     // A mask the code holds as a number (a constant bit
                     // pattern: every other lane, every other pair...):
@@ -8739,8 +8753,8 @@ impl<'a> Lower<'a> {
                         Some(&Operand::Scalar { code, .. }) => inst.read(Reg::S(code)),
                         _ => None,
                     };
-                    let m = m
-                        .and_then(|m| self.x.st.masks.get(&m).copied())
+                    let m = const_mask(v.src.get(2))
+                        .or_else(|| m.and_then(|m| self.x.st.masks.get(&m).copied()))
                         .ok_or("a carry-in from an untracked mask")?;
                     Some(self.boolean(m, c)?)
                 } else {
@@ -14144,5 +14158,90 @@ mod tests {
         six[6] = 0x8090_0E0C; // s_sub_u32 s16, s12, s14
         let err = refusal(lower_with(&six, vec![root(RootType::Table, 0, 0)], table_srv(0, 8)));
         assert!(err.contains("a descriptor's format or metadata read as data"), "{err}");
+    }
+
+    /// A compute program of `threads` with the root layout `layout`, on a host of
+    /// `host` lanes.
+    fn lower_cs_host(
+        words: &[u32],
+        threads: [u32; 3],
+        layout: Vec<RootParam>,
+        wave64: bool,
+        host: u32,
+    ) -> Result<Lowered, crate::ShaderError> {
+        let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        let sgprs: u32 = layout.iter().map(|p| p.sgprs).sum();
+        let native = NativeProgram {
+            stage: HwStage::Cs,
+            wave64,
+            vgprs: 256,
+            layout,
+            used: vec![],
+            io: StageIo::Cs(ComputeIo {
+                rsrc2: 1 << 15 | sgprs.max(2) << 1,
+                threads,
+            }),
+            code,
+        };
+        let previous = super::TEST_HOST_WAVE.replace(Some(host));
+        let result = (|| {
+            let p = ir::build(&native.code, wave64, 256).unwrap();
+            let st = structure::structure(&p)?;
+            let res = resource::track(&p, &native.layout, native.stage, Some(&st))?;
+            let io = io::raise(&p, &native).unwrap();
+            lower(&Parts {
+                native: &native,
+                p: &p,
+                st: &st,
+                io: &io,
+                res: &res,
+                inputs: vec![],
+                outputs: vec![],
+                prims: vec![],
+                mesh_stride: 0,
+            })
+        })();
+        super::TEST_HOST_WAVE.set(previous);
+        result
+    }
+
+    // Upstream #1845: selects and carries on lane masks that are not compare results:
+    // uniform s_cselect, constants (inline, NULL, s_mov), wave64 masks built from two
+    // 32-bit halves, joins of a compare and a constant; on 32- and 64-lane hosts.
+    #[test]
+    fn selects_and_carries_read_uniform_and_constant_masks() {
+        let cnd = |mask_src: u32| [0xD501_0001u32, 256 | (129 << 9) | (mask_src << 18)];
+        // v_add_co_ci_u32 v1, vcc, v0, 1, <mask>
+        let carry = |mask_src: u32| [0xD528_6A01u32, 256 | (129 << 9) | (mask_src << 18)];
+        let layout = || vec![root(RootType::Constants, 0, 0), root(RootType::Constants, 1, 1)];
+        let [a0, a1] = cnd(6);
+        let [m0, m1] = cnd(2);
+        let store = [0xD834_0000u32, 0x0000_0100, S_ENDPGM];
+        let mut cases: Vec<(String, bool, Vec<u32>)> = vec![
+            ("wave64 s_cselect_b64 and s_and_b64".into(), true,
+             vec![0xBF06_8000, 0x8582_80C1, 0xBF07_8001, 0x8584_80C1, 0x8786_0402, a0, a1]),
+            ("wave32 s_cselect_b32".into(), false, vec![0xBF06_8000, 0x8502_80C1, m0, m1]),
+            ("wave64 s_mov_b64 -1".into(), true, vec![0xBE82_04C1, m0, m1]),
+            ("wave64 split s_cselect_b32".into(), true,
+             vec![0xBF06_8000, 0x8502_80C1, 0x8503_80C1, m0, m1]),
+            ("wave64 split vcc copies".into(), true, vec![0x7D84_0080, 0xBE82_036A, 0xBE83_036B, m0, m1]),
+            ("wave64 join of a compare and 0".into(), true,
+             vec![0xBF06_8000, 0xBF85_0003, 0x7D84_0080, 0xBE82_046A, 0xBF82_0001, 0xBE82_0480, m0, m1]),
+        ];
+        for (name, src) in [("inline -1", 193), ("inline 0", 128), ("NULL", 125)] {
+            for wave64 in [false, true] {
+                cases.push((format!("select {name} wave64={wave64}"), wave64, cnd(src).to_vec()));
+                cases.push((format!("carry {name} wave64={wave64}"), wave64, carry(src).to_vec()));
+            }
+        }
+        for (name, wave64, body) in cases {
+            let words = [&body[..], &store[..]].concat();
+            let threads = if wave64 { [64, 1, 1] } else { [32, 1, 1] };
+            for host in [32, 64] {
+                let l = lower_cs_host(&words, threads, layout(), wave64, host)
+                    .unwrap_or_else(|e| panic!("{name}, host {host}: {e}"));
+                validate_lowered(&l);
+            }
+        }
     }
 }
