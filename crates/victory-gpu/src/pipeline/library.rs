@@ -564,19 +564,32 @@ pub(crate) fn pipeline(
     Ok(pso)
 }
 
-/// Writes the library and the early list if pipelines were added since the
-/// last save and `SAVE_EVERY` has passed (or `now`).
+/// Writes the library if pipelines were added since its last save and
+/// `SAVE_EVERY` has passed, and the early list if it changed and
+/// `LIST_EVERY` has passed (both at once with `now`). The list is small and
+/// written often: a run that crashes or loses its device never reaches the
+/// end-of-run save, and with the list on the library's 20 s step such a run
+/// lost what it had learnt, so each relaunch did a little better.
 pub(crate) fn save(now: bool) {
-    static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
-    const SAVE_EVERY: std::time::Duration = std::time::Duration::from_secs(20);
+    use std::time::{Duration, Instant};
+    static LAST: Mutex<(Option<Instant>, Option<Instant>)> = Mutex::new((None, None));
+    const SAVE_EVERY: Duration = Duration::from_secs(20);
+    const LIST_EVERY: Duration = Duration::from_secs(2);
     let (Some(dir), Some(library)) = (DIR.get(), library()) else { return };
-    {
+    let library_due = {
         let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
-        if !now && last.is_some_and(|t| t.elapsed() < SAVE_EVERY) {
+        let due = |t: Option<Instant>, every: Duration| now || t.is_none_or(|t| t.elapsed() >= every);
+        let library_due = due(last.0, SAVE_EVERY) && library.added.load(Ordering::Relaxed) > 0;
+        if !library_due && !(due(last.1, LIST_EVERY) && USED_CHANGED.load(Ordering::Relaxed)) {
             return;
         }
-        *last = Some(std::time::Instant::now());
-    }
+        let t = Some(Instant::now());
+        if library_due {
+            last.0 = t;
+        }
+        last.1 = t;
+        library_due
+    };
     if let Err(e) = std::fs::create_dir_all(dir) {
         tracing::warn!(error = %e, "host pipeline library not saved");
         return;
@@ -591,10 +604,10 @@ pub(crate) fn save(now: bool) {
         // No store between asking the size and writing; loads go on.
         let _alone = library.saving.write().unwrap_or_else(|e| e.into_inner());
         let added = library.added.load(Ordering::Relaxed);
-        if !USED_CHANGED.swap(false, Ordering::Relaxed) && added == 0 {
+        if !USED_CHANGED.swap(false, Ordering::Relaxed) && (added == 0 || !library_due) {
             return;
         }
-        if added == 0 {
+        if added == 0 || !library_due {
             0
         } else {
             // SAFETY: a plain query.

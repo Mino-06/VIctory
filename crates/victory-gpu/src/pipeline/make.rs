@@ -138,12 +138,27 @@ pub(crate) fn now(p: &Arc<Pending>) -> bool {
 }
 
 /// At the title's creation of a pipeline: starts it at once if an earlier
-/// run drew with it (during loading, so the world's first frames find it).
+/// run drew with it (during loading, so the world's first frames find it),
+/// else after those. Without the second tier a first launch had nothing to
+/// start early and dropped every draw whose pipeline missed the frame's
+/// budget; only relaunches got better.
 pub(crate) fn early(p: &Arc<Pending>) {
-    if !p.shaders.is_empty() && super::library::wanted_early(&p.key) {
+    if p.shaders.is_empty() {
+        return;
+    }
+    if super::library::wanted_early(&p.key) {
         super::library::EARLY.fetch_add(1, Ordering::Relaxed);
         start(p, EARLY);
+    } else if prewarm_all() {
+        start(p, SPECULATIVE);
     }
+}
+
+/// On by default; `VICTORY_PREWARM_ALL=0` starts only pipelines an earlier
+/// run drew with.
+fn prewarm_all() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VICTORY_PREWARM_ALL").is_none_or(|v| v != "0"))
 }
 
 /// Whether the frame's budget is one for all threads together: a thread
@@ -214,11 +229,13 @@ fn wait(p: &Pending, frame: u64) {
 }
 
 const NOT_QUEUED: u8 = 0;
-const EARLY: u8 = 1;
-const REQUESTED: u8 = 2;
-const MAKING: u8 = 3;
+const SPECULATIVE: u8 = 1;
+const EARLY: u8 = 2;
+const REQUESTED: u8 = 3;
+const MAKING: u8 = 4;
 
 struct Queue {
+    speculative: VecDeque<Arc<Pending>>,
     early: VecDeque<Arc<Pending>>,
     requested: VecDeque<Arc<Pending>>,
 }
@@ -226,6 +243,7 @@ struct Queue {
 impl Queue {
     const fn new() -> Self {
         Self {
+            speculative: VecDeque::new(),
             early: VecDeque::new(),
             requested: VecDeque::new(),
         }
@@ -239,20 +257,27 @@ impl Queue {
             return None;
         }
         p.queue_state.store(priority, Ordering::Relaxed);
-        if priority == REQUESTED {
-            self.requested.push_back(p.clone());
-        } else {
-            self.early.push_back(p.clone());
+        match priority {
+            REQUESTED => self.requested.push_back(p.clone()),
+            EARLY => self.early.push_back(p.clone()),
+            _ => self.speculative.push_back(p.clone()),
         }
         Some(prev == NOT_QUEUED)
     }
 
     fn pop(&mut self) -> Option<Arc<Pending>> {
-        let p = self.requested.pop_front().or_else(|| {
-            // An early entry can have been promoted and claimed already.
-            std::iter::from_fn(|| self.early.pop_front())
-                .find(|p| p.queue_state.load(Ordering::Relaxed) == EARLY)
-        })?;
+        // A lower tier's entry can have been promoted and claimed already.
+        let p = self
+            .requested
+            .pop_front()
+            .or_else(|| {
+                std::iter::from_fn(|| self.early.pop_front())
+                    .find(|p| p.queue_state.load(Ordering::Relaxed) == EARLY)
+            })
+            .or_else(|| {
+                std::iter::from_fn(|| self.speculative.pop_front())
+                    .find(|p| p.queue_state.load(Ordering::Relaxed) == SPECULATIVE)
+            })?;
         p.queue_state.store(MAKING, Ordering::Relaxed);
         Some(p)
     }
@@ -394,6 +419,24 @@ mod tests {
         assert!(Arc::ptr_eq(&queue.pop().unwrap(), &promoted));
         assert_eq!(queue.push(&promoted, REQUESTED), None);
         assert!(Arc::ptr_eq(&queue.pop().unwrap(), &earlier));
+        assert!(queue.pop().is_none());
+    }
+
+    #[test]
+    fn speculative_pipelines_come_last_and_can_be_promoted() {
+        let guess = Arc::new(Pending::new(Vec::new(), None));
+        let promoted = Arc::new(Pending::new(Vec::new(), None));
+        let known = Arc::new(Pending::new(Vec::new(), None));
+        let mut queue = Queue::new();
+
+        assert_eq!(queue.push(&guess, SPECULATIVE), Some(true));
+        assert_eq!(queue.push(&promoted, SPECULATIVE), Some(true));
+        assert_eq!(queue.push(&known, EARLY), Some(true));
+        assert_eq!(queue.push(&promoted, REQUESTED), Some(false));
+
+        assert!(Arc::ptr_eq(&queue.pop().unwrap(), &promoted));
+        assert!(Arc::ptr_eq(&queue.pop().unwrap(), &known));
+        assert!(Arc::ptr_eq(&queue.pop().unwrap(), &guess));
         assert!(queue.pop().is_none());
     }
 }
