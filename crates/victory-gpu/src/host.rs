@@ -1869,6 +1869,10 @@ impl Deferred {
         self.kept.clear();
         self.refreshed.clear();
         self.textures.clear();
+        // Each recording queues its texture uploads again; kept across
+        // resets they held every staging buffer alive (3.4 GB in run nav4)
+        // and every prelude walked all of them.
+        self.texture_uploads.clear();
         self.writes.clear();
         self.backs.clear();
         self.budget_zeroed = false;
