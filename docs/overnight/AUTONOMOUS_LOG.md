@@ -283,7 +283,7 @@ cached, #1845 dword 1/5 and masks, #1890 `split.rs` behind
   cold: 1.27 fps, 1,359 draws dropped/frame, white over-exposure at
   360-390 s. vis_off ran second, warm: 1.81 fps, 689 dropped, and the
   cinematic is **correct**: exposure, prison yard, character and hair
-  (`docs/overnight/vis-on-off-cold-warm.png`, top on/cold, bottom off/warm).
+  (`docs/overnight/screens/vis-on-off-cold-warm.png (local only)`, top on/cold, bottom off/warm).
 - So the white and blocky screens come mostly from passes whose pipeline
   is not made yet; they go once the caches are warm. The order biased this
   pair: chain5 repeats it warm (vis_off2 then vis_on2) to see whether the
@@ -295,7 +295,26 @@ cached, #1845 dword 1/5 and masks, #1890 `split.rs` behind
 - lds (VICTORY_WAVE_LDS_SYNC=1 with INDIRECT_WINDOW + LATE_WAIT, warm):
   2.54 fps, load 81 s, no crash. vis_off2 (all three off, warm): 2.23 fps.
   Both render the cinematic correctly; LDS sync shows no visible artefact
-  (`docs/overnight/lds-sync-vs-off.png`, top lds, bottom off).
+  (`docs/overnight/screens/lds-sync-vs-off.png (local only)`, top lds, bottom off).
 - At ~360 s the game shows "Se déplacer / Bouger la caméra": the prologue
   hands control to the player. Queued chain6: a 600 s run with movement
   keys after 370 s (W held, camera J/L, Enter), captures every 20 s.
+
+## Pass 13: defaults
+
+- Warm repeat: vis_on2 (INDIRECT_WINDOW + LATE_WAIT) 2.84 fps vs vis_off2
+  2.23 fps (+27 %), images correct in both.
+- Now on by default in code: `VICTORY_INDIRECT_WINDOW` and
+  `VICTORY_WAVE_LDS_SYNC` (each `=0` turns it off).
+- `VICTORY_LATE_WAIT` stays opt-in (`=1`): with it on by default the GPU
+  test `resource::tests::buffer_data_reaches_the_host_texture` fails (the
+  upload list no longer holds the texture when checked). That may be the
+  test's assumption about the waited mode or a real lifetime gap (a texture
+  let go while a flight reads it); not settled. The title ran many runs
+  with it on, no crash, correct frames. Recommended launch for now:
+  `VICTORY_LATE_WAIT=1`.
+- Repository policy: game screenshots may not be committed. The two PNGs
+  went to `docs/overnight/screens/` (git-ignored). They remain in local
+  commits 731a2e1 and e09d138: purge them from history before any push.
+- Full suite (LATE_WAIT opt-in): 714 passed + policy test passing after the
+  PNGs left = 715 passed, 0 failed.

@@ -1125,14 +1125,16 @@ fn lds_lane_private(p: &crate::ir::Program) -> bool {
 /// write in one lane-branch region), split it all the same, upstream #1890's `lds_sync`
 /// way: the host waves meet only in blocks the whole group runs together (all-lane blocks
 /// that [`super::split::convergent`] also finds convergent) and around the regions;
-/// inside a region a half may read what the other half writes there early. Off by default.
+/// inside a region a half may read what the other half writes there early. On by default
+/// (`=0` off): without it the 43 programs a 32-lane host cannot run whole were dropped and
+/// their passes left stale tiles; with it the prologue showed no artefact.
 fn lds_sync_on() -> bool {
     #[cfg(test)]
     if let Some(on) = TEST_LDS_SYNC.get() {
         return on;
     }
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("VICTORY_WAVE_LDS_SYNC").is_some_and(|v| v == "1"))
+    *ON.get_or_init(|| std::env::var_os("VICTORY_WAVE_LDS_SYNC").is_none_or(|v| v != "0"))
 }
 
 #[cfg(test)]
