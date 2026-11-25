@@ -8,11 +8,11 @@ Branch: `integration/nvidia-first-launch-and-open-prs`.
 - `cargo test --release --workspace`: 705 passed, 0 failed, 15 ignored.
 - `victory doctor`: READY (RTX 3090, shader model 6.6, mesh shaders, 32-lane waves only).
 - Created `victory.toml` (git-ignored) with `game_dir = 'D:\Games\GT2\GT XBUILD'`.
-- First launch: `victory run --execute D:/Games/GT2/carlo/game.exe`.
+- First launch: `victory run --execute <game folder>/game.exe`.
   - Bound 89 HLE, 427 host, 71 missing imports (XboxBvhBuilder 7,
     amd_fidelityfx_loader_xbox 3, libHttpClient.GDK 38, Bink2Scarlett 23).
   - `rpcrt4.dll` refused by the host DLL policy.
-  - Virtual drive G rooted at `D:/Games/GT2/carlo` (the exe's folder), which
+  - Virtual drive G rooted at `<game folder>` (the exe's folder), which
     holds only `game.exe`; the data (`*.rpf`) is in `GT XBUILD`.
   - 0.3 s after start: exception 0x80000003 (int3) at image+0x2237178, the
     title's own crash reporter then ran. No window, no frame.
