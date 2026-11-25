@@ -229,6 +229,17 @@ impl Host {
             .collect();
         views.sort_unstable();
         views.dedup();
+        // Timing: `VICTORY_ROOT_NONCE=<n>` adds an unused root constant so
+        // the driver's disk cache does not answer for the pipeline.
+        if let Some(n) = std::env::var("VICTORY_ROOT_NONCE").ok().and_then(|n| n.parse::<u32>().ok()) {
+            params.push(D3D12_ROOT_PARAMETER1 {
+                ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+                Anonymous: D3D12_ROOT_PARAMETER1_0 {
+                    Constants: D3D12_ROOT_CONSTANTS { ShaderRegister: n, RegisterSpace: 9999, Num32BitValues: 1 },
+                },
+                ShaderVisibility: D3D12_SHADER_VISIBILITY_ALL,
+            });
+        }
         for (slot, kind) in views {
             params.push(D3D12_ROOT_PARAMETER1 {
                 ParameterType: match kind {

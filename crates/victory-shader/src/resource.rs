@@ -223,6 +223,10 @@ pub fn track(
     // and loads that entry: accesses, offset reads and loads by block.
     let mut offset_at =
         std::collections::BTreeMap::<usize, (Vec<usize>, Vec<Value>, Vec<Site>)>::new();
+    // Waterfall loops over a descriptor the code keeps per lane: the same in
+    // every lane, so their compares hold wherever the proof goes through
+    // (and the loop runs once either way).
+    let mut kept_at = std::collections::BTreeMap::<usize, (Vec<usize>, Vec<Value>)>::new();
     for (b, block) in p.blocks.iter().enumerate() {
         t.at.set(Some(b));
         for (i, inst) in block.insts.iter().enumerate() {
@@ -232,6 +236,7 @@ pub fn track(
                 what,
             };
             let mut first_lane = Vec::new();
+            let mut kept = Vec::new();
             let mut offset = Vec::new();
             let mut descriptor = |op: &Operand, role| -> Result<(), ShaderError> {
                 let source = t.descriptor(inst, op, b).map_err(fail)?;
@@ -240,6 +245,8 @@ pub fn track(
                 // and needs no proof.
                 if !t.kept_per_lane(inst, op) {
                     first_lane.extend(t.first_lane_words(inst, op).unwrap_or_default());
+                } else {
+                    kept.extend(t.first_lane_words(inst, op).unwrap_or_default());
                 }
                 if let Source::Loaded { load, .. } = source
                     && out.scalar.iter().any(|s| s.0 == load)
@@ -323,6 +330,11 @@ pub fn track(
                 accesses.push(i);
                 reads.extend(first_lane);
             }
+            if !kept.is_empty() {
+                let (accesses, reads) = kept_at.entry(b).or_default();
+                accesses.push(i);
+                reads.extend(kept);
+            }
             if !offset.is_empty() {
                 let (accesses, reads, loads) = offset_at.entry(b).or_default();
                 accesses.push(i);
@@ -361,6 +373,14 @@ pub fn track(
             out.waterfall.compares.extend(proof.compares);
             out.waterfall.reads.extend(proof.reads);
             out.waterfall.loads.extend(loads);
+        }
+    }
+    for (block, (accesses, mut reads)) in kept_at {
+        reads.sort_unstable();
+        reads.dedup();
+        if let Ok(proof) = t.waterfall(block, &accesses, &reads) {
+            out.waterfall.compares.extend(proof.compares);
+            out.waterfall.reads.extend(proof.reads);
         }
     }
     out.lane_copied = t.lane_copied.take();
@@ -1975,7 +1995,14 @@ impl<'a> Tracer<'a> {
             return Err(SELECT);
         }
         let reach = (lanes.reach[b], true);
-        let meet = |conditions: &[(Bool, bool)]| self.meet(lanes, conditions);
+        // Without the reach first: what no lane meets, no lane that reaches
+        // the loop meets either, and the reach of a large program's block
+        // can be too large to split within `meet`'s budget (which then
+        // answers yes): the loops of large programs went unproven.
+        let meet = |conditions: &[(Bool, bool)]| {
+            let rest: Vec<_> = conditions.iter().copied().filter(|&c| c != reach).collect();
+            self.meet(lanes, &rest) && self.meet(lanes, conditions)
+        };
         let mut out = Waterfall::default();
         let mut required = vec![(remaining, true)];
         for (i, inst) in block.insts[..access].iter().enumerate() {
@@ -3561,6 +3588,44 @@ pub(crate) mod tests {
                 assert_eq!(r.waterfall.reads.len(), 8, "{wave64} {folded}");
             }
         }
+    }
+
+    #[test]
+    fn a_waterfall_over_a_descriptor_kept_per_lane_has_its_compares_hold() {
+        // The descriptor kept per lane (`lane_copied`), and a v_cmpx
+        // waterfall loop over it: the same dwords in every lane, so each
+        // compare holds and one pass serves every lane (the loop folds away
+        // in lowering instead of staying a loop the driver compiles).
+        let mut words = vec![
+            0xBE82_0300, // s_mov_b32 s2, s0
+            0xBE83_0380, // s_mov_b32 s3, 0
+            0xF40C_0101,
+            0xFA00_0000, // s_load_dwordx8 s[4:11], s[2:3], null
+        ];
+        // v_mov_b32 v10.., s4..
+        words.extend((0..8).map(|k| 0x7E00_0200 | (10 + k) << 17 | (4 + k)));
+        words.extend([
+            0xBE99_037E, // s_mov_b32 s25, exec_lo
+            0xBE98_037E, // s_mov_b32 s24, exec_lo
+        ]);
+        // v_readfirstlane_b32 s16.., v10..
+        words.extend((0..8).map(|k| 0x7E00_0400 | (16 + k) << 17 | (0x100 + 10 + k)));
+        words.extend([
+            0x7DE4_1410, // v_cmpx_eq_u64 s[16:17], v[10:11]
+            0x7DE4_1812, // v_cmpx_eq_u64 s[18:19], v[12:13]
+            0x7DE4_1C14, // v_cmpx_eq_u64 s[20:21], v[14:15]
+            0x7DE4_2016, // v_cmpx_eq_u64 s[22:23], v[16:17]
+            0xF000_1700,
+            0x0004_0D06, // image_load v[13:15], v6, s[16:23]
+            0xBE98_4718, // s_andn2_wrexec_b32 s24, s24
+            0xBF89_FFF0, // s_cbranch_execnz (the first read)
+            0xBEFE_0319, // s_mov_b32 exec_lo, s25
+            S_ENDPGM,
+        ]);
+        let r = waterfall(&words, false).unwrap();
+        assert_eq!(r.lane_copied.len(), 1);
+        assert_eq!(r.waterfall.compares.len(), 4);
+        assert_eq!(r.waterfall.reads.len(), 8);
     }
 
     #[test]

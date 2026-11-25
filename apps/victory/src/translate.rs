@@ -595,6 +595,8 @@ fn check(
         );
     }
     if let Some((h, stub_ps)) = &checks.host {
+        let started = std::time::Instant::now();
+        let cpu0 = cpu_ms();
         let made = match shader.stage {
             HwStage::Vs => h.pipeline(&shader, stub_ps).map(drop),
             HwStage::Cs => h.compute_pipeline(&shader).map(drop),
@@ -605,7 +607,9 @@ fn check(
             Ok(()) => {
                 *counter(t, shader.stage, 3) += 1;
                 if t.list {
-                    t.lines.push(format!("{}  pipeline created", label()));
+                    let ms = started.elapsed().as_millis();
+                    let cpu = cpu_ms() - cpu0;
+                    t.lines.push(format!("{}  pipeline created in {ms} ms, {cpu} ms CPU ({} bytes)", label(), shader.dxil.len()));
                 }
             }
             Err(e) => t.fail(format!("pipeline: {e}"), &label),
@@ -859,3 +863,21 @@ mod tests {
         );
     }
 }
+
+/// The process's user and kernel time so far, in milliseconds (pipeline
+/// timings that hold under a loaded machine; meant for `--jobs 1`).
+fn cpu_ms() -> u64 {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::FILETIME;
+        use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+        let (mut a, mut b, mut k, mut u) = (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+        // SAFETY: four live out-parameters; the pseudo handle needs no closing.
+        if unsafe { GetProcessTimes(GetCurrentProcess(), &mut a, &mut b, &mut k, &mut u) }.is_ok() {
+            let t = |f: FILETIME| (u64::from(f.dwHighDateTime) << 32 | u64::from(f.dwLowDateTime)) / 10_000;
+            return t(k) + t(u);
+        }
+    }
+    0
+}
+
