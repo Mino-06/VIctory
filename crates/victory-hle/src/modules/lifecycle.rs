@@ -75,11 +75,15 @@ pub extern "system" fn CreateWindowExW(
 ) -> HWND {
     let (x, y, width, height) = fit(parent, x, y, width, height);
     // SAFETY: the title's own arguments, forwarded (the size fitted).
+    let owner = keyboard_owner();
+    let ex_style = quiet_style(parent, ex_style);
     let hwnd = unsafe {
         wm::CreateWindowExW(
             ex_style, class, name, style, x, y, width, height, parent, menu, instance, param,
         )
     };
+    give_keyboard_back(owner);
+    raise_quietly(hwnd, parent);
     hook(hwnd);
     hwnd
 }
@@ -101,11 +105,15 @@ pub extern "system" fn CreateWindowExA(
 ) -> HWND {
     let (x, y, width, height) = fit(parent, x, y, width, height);
     // SAFETY: the title's own arguments, forwarded (the size fitted).
+    let owner = keyboard_owner();
+    let ex_style = quiet_style(parent, ex_style);
     let hwnd = unsafe {
         wm::CreateWindowExA(
             ex_style, class, name, style, x, y, width, height, parent, menu, instance, param,
         )
     };
+    give_keyboard_back(owner);
+    raise_quietly(hwnd, parent);
     hook(hwnd);
     hwnd
 }
@@ -115,20 +123,119 @@ pub extern "system" fn CreateWindowExA(
 /// A top-level window is shrunk to fit the work area and the optional
 /// configured bound, then centred. The swap chain stretches to the window.
 fn fit(parent: HWND, x: i32, y: i32, width: i32, height: i32) -> (i32, i32, i32, i32) {
-    let mut area = RECT::default();
+    if !parent.is_null() {
+        return (x, y, width, height);
+    }
+    let chosen = chosen_work_area();
+    let mut area = chosen.unwrap_or_default();
     // SAFETY: `area` receives the primary monitor's work area.
-    let known =
-        unsafe { wm::SystemParametersInfoW(wm::SPI_GETWORKAREA, 0, (&raw mut area).cast(), 0) };
+    let known = chosen.is_some()
+        || unsafe { wm::SystemParametersInfoW(wm::SPI_GETWORKAREA, 0, (&raw mut area).cast(), 0) }
+            != 0;
     let limit = window_limit();
     let fitted = fit_with_limit(&area, width, height, limit);
-    if !parent.is_null() || known == 0 || fitted == (width, height) {
+    if !known || (chosen.is_none() && fitted == (width, height)) {
         return (x, y, width, height);
     }
     tracing::info!(width, height, to = ?fitted, ?limit, "title window fitted to the screen");
     let (w, h) = fitted;
+    if w <= 0 || h <= 0 {
+        return (area.left, area.top, w, h);
+    }
     let left = area.left + (area.right - area.left - w) / 2;
     let top = area.top + (area.bottom - area.top - h) / 2;
     (left, top, w, h)
+}
+
+fn parse_window_at(value: &str) -> Option<(i32, i32)> {
+    let (x, y) = value.trim().split_once(',')?;
+    Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+}
+
+/// `VICTORY_WINDOW_AT=X,Y` (desktop coordinates) picks the screen of the
+/// title's window: the one nearest that point.
+fn window_at() -> Option<(i32, i32)> {
+    static AT: std::sync::OnceLock<Option<(i32, i32)>> = std::sync::OnceLock::new();
+    *AT.get_or_init(|| {
+        let value = std::env::var_os("VICTORY_WINDOW_AT")?;
+        let parsed = value.to_str().and_then(parse_window_at);
+        if parsed.is_none() {
+            tracing::warn!(?value, "ignoring invalid VICTORY_WINDOW_AT; expected X,Y");
+        }
+        parsed
+    })
+}
+
+fn chosen_work_area() -> Option<RECT> {
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    };
+    let (x, y) = window_at()?;
+    let mut info = MONITORINFO {
+        cbSize: size_of::<MONITORINFO>() as u32,
+        // SAFETY: plain data, all zero is valid.
+        ..unsafe { std::mem::zeroed() }
+    };
+    // SAFETY: `info` has its size set and receives the monitor's areas.
+    let ok = unsafe {
+        let monitor = MonitorFromPoint(
+            windows_sys::Win32::Foundation::POINT { x, y },
+            MONITOR_DEFAULTTONEAREST,
+        );
+        GetMonitorInfoW(monitor, &raw mut info)
+    };
+    (ok != 0).then_some(info.rcWork)
+}
+
+/// `VICTORY_WINDOW_QUIET=1`: the title's window never takes the keyboard
+/// (unattended runs beside someone's work). A gamepad still reaches it.
+fn quiet() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VICTORY_WINDOW_QUIET").is_some_and(|v| v == "1"))
+}
+
+fn quiet_style(parent: HWND, ex_style: u32) -> u32 {
+    if quiet() && parent.is_null() {
+        ex_style | wm::WS_EX_NOACTIVATE
+    } else {
+        ex_style
+    }
+}
+
+/// The window that has the keyboard, when the title's window is to leave it
+/// there.
+fn keyboard_owner() -> HWND {
+    if !quiet() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: no arguments.
+    unsafe { wm::GetForegroundWindow() }
+}
+
+/// A window made without activation lands under the others on its screen:
+/// it is put on top of them, still without the keyboard.
+fn raise_quietly(hwnd: HWND, parent: HWND) {
+    if quiet() && parent.is_null() && !hwnd.is_null() {
+        // SAFETY: a window this thread just created.
+        unsafe {
+            wm::SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                wm::SWP_NOMOVE | wm::SWP_NOSIZE | wm::SWP_NOACTIVATE,
+            )
+        };
+    }
+}
+
+fn give_keyboard_back(owner: HWND) {
+    if !owner.is_null() {
+        // SAFETY: a window handle; a stale one is refused.
+        unsafe { wm::SetForegroundWindow(owner) };
+    }
 }
 
 fn parse_window_limit(value: &str) -> Option<(i32, i32)> {

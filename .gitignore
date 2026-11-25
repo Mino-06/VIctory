@@ -83,3 +83,4 @@ Thumbs.db
 
 # LINUX proton cache
 vkd3d-proton.cache
+/target-diag/
