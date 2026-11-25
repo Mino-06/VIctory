@@ -64,13 +64,16 @@ impl Pending {
     fn make(&self) {
         self.made.get_or_init(|| {
             let started = Instant::now();
+            let cpu_before = thread_cpu_ms();
             let made = HostPipeline::new(&self.shaders, self.graphics.as_deref());
             let took = started.elapsed();
-            // What holds a worker: the queue behind it waits as long.
+            // What holds a worker: the queue behind it waits as long. `cpu`
+            // far below `ms` is time the thread was not given the CPU.
             if took >= Duration::from_secs(1) {
+                let cpu = thread_cpu_ms().saturating_sub(cpu_before);
                 let shaders: Vec<_> =
                     self.shaders.iter().map(|s| format!("{} {}", s.stage, s.hash)).collect();
-                tracing::info!(ms = took.as_millis() as u64, ?shaders, "slow host pipeline");
+                tracing::info!(ms = took.as_millis() as u64, cpu, ?shaders, "slow host pipeline");
             }
             made
         });
@@ -78,6 +81,20 @@ impl Pending {
         let _held = lock.lock().unwrap_or_else(|e| e.into_inner());
         done.notify_all();
     }
+}
+
+/// The calling thread's CPU time (kernel and user), in milliseconds.
+fn thread_cpu_ms() -> u64 {
+    use windows::Win32::Foundation::FILETIME;
+    use windows::Win32::System::Threading::{GetCurrentThread, GetThreadTimes};
+    let mut t = [FILETIME::default(); 4];
+    let [created, exited, kernel, user] = &mut t;
+    // SAFETY: our own thread and four FILETIMEs to fill.
+    if unsafe { GetThreadTimes(GetCurrentThread(), created, exited, kernel, user) }.is_err() {
+        return 0;
+    }
+    let ticks = |f: &FILETIME| (u64::from(f.dwHighDateTime) << 32) | u64::from(f.dwLowDateTime);
+    (ticks(kernel) + ticks(user)) / 10_000
 }
 
 /// Why a pipeline has no host pipeline (diagnostics): its shaders that do
@@ -134,9 +151,36 @@ pub(crate) fn ready(p: &Arc<Pending>) -> Option<&HostPipeline> {
     }
     if p.made.get().is_none() {
         start(p, REQUESTED);
-        wait(p, crate::frame::current());
+        let frame = crate::frame::current();
+        wait(p, frame);
+        // A dropped dispatch leaves its whole output stale (exposure,
+        // tiled lighting, post passes: the white and blocky screens of the
+        // prologue), where a dropped draw loses one object. Dispatches
+        // wait longer, on a budget of their own.
+        if p.graphics.is_none() && p.made.get().is_none() {
+            static SPENT: Mutex<WaitBudget> = Mutex::new(WaitBudget {
+                frame: None,
+                spent: Duration::ZERO,
+            });
+            wait_with(p, frame, compute_budget(), &SPENT);
+        }
     }
     p.made.get()?.as_ref()
+}
+
+/// Waiting allowed per title frame for dispatches whose pipeline is still
+/// being made, past the shared budget: 3 s, or `VICTORY_COMPUTE_WAIT_MS`.
+/// Kept well under the title's GPU watchdog.
+fn compute_budget() -> Duration {
+    static BUDGET: OnceLock<Duration> = OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        Duration::from_millis(
+            std::env::var("VICTORY_COMPUTE_WAIT_MS")
+                .ok()
+                .and_then(|value| value.trim().parse::<u64>().ok())
+                .unwrap_or(3000),
+        )
+    })
 }
 
 /// Makes `p` on this thread if it is not made yet (waiting for a worker
@@ -222,18 +266,22 @@ impl WaitBudget {
 
 /// Waits for `p` while frame `frame` has budget left.
 fn wait(p: &Pending, frame: u64) {
-    let budget = wait_budget();
-    if budget.is_zero() {
-        return;
-    }
     // The frame the budget belongs to, and what was waited of it (or is
     // taken by a thread waiting now).
     static SPENT: Mutex<WaitBudget> = Mutex::new(WaitBudget {
         frame: None,
         spent: Duration::ZERO,
     });
+    wait_with(p, frame, wait_budget(), &SPENT);
+}
+
+/// Waits for `p` while frame `frame` has some of `budget` left in `spent_by`.
+fn wait_with(p: &Pending, frame: u64, budget: Duration, spent_by: &Mutex<WaitBudget>) {
+    if budget.is_zero() {
+        return;
+    }
     let shared = shared_budget();
-    let left = SPENT.lock().unwrap_or_else(|e| e.into_inner()).reserve(frame, budget, shared);
+    let left = spent_by.lock().unwrap_or_else(|e| e.into_inner()).reserve(frame, budget, shared);
     if left.is_zero() {
         return;
     }
@@ -250,7 +298,7 @@ fn wait(p: &Pending, frame: u64) {
     drop(held);
     let waited = started.elapsed().min(left);
     {
-        let mut spent = SPENT.lock().unwrap_or_else(|e| e.into_inner());
+        let mut spent = spent_by.lock().unwrap_or_else(|e| e.into_inner());
         // A frame that began meanwhile has its own budget.
         spent.finish(frame, left, waited, shared);
     }
@@ -298,7 +346,8 @@ impl Queue {
         Some(prev == NOT_QUEUED)
     }
 
-    fn pop(&mut self) -> Option<Arc<Pending>> {
+    /// The next pipeline to make, and the tier it was queued at.
+    fn pop(&mut self) -> Option<(Arc<Pending>, u8)> {
         // A lower tier's entry can have been promoted and claimed already.
         let p = self
             .requested
@@ -311,8 +360,8 @@ impl Queue {
                 std::iter::from_fn(|| self.speculative.pop_front())
                     .find(|p| p.queue_state.load(Ordering::Relaxed) == SPECULATIVE)
             })?;
-        p.queue_state.store(MAKING, Ordering::Relaxed);
-        Some(p)
+        let tier = p.queue_state.swap(MAKING, Ordering::Relaxed);
+        Some((p, tier))
     }
 }
 
@@ -340,7 +389,7 @@ fn start(p: &Arc<Pending>, priority: u8) {
     }
 }
 
-fn next() -> Arc<Pending> {
+fn next() -> (Arc<Pending>, u8) {
     let mut queue = QUEUE.lock().unwrap_or_else(|e| e.into_inner());
     loop {
         if let Some(p) = queue.pop() {
@@ -400,6 +449,7 @@ fn workers() -> bool {
                         use windows::Win32::System::Threading::*;
                         let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
                     }
+                    let mut urgent = false;
                     loop {
                         // All of them during the intro and the menus starve
                         // the title's threads: frames come unevenly.
@@ -409,7 +459,16 @@ fn workers() -> bool {
                                 held = WORLD_BEGAN.1.wait(held).unwrap_or_else(|e| e.into_inner());
                             }
                         }
-                        next().make();
+                        let (p, tier) = next();
+                        // A pipeline a draw waits for now is made above the
+                        // title's threads; the rest below them. All below,
+                        // a saturated CPU left a 5 s compile taking 48 s
+                        // in the prologue.
+                        if (tier == REQUESTED) != urgent {
+                            urgent = tier == REQUESTED;
+                            set_priority(urgent);
+                        }
+                        p.make();
                         if WAITING.fetch_sub(1, Ordering::Relaxed) == 1 {
                             drained();
                         } else {
@@ -425,6 +484,14 @@ fn workers() -> bool {
         }
         running
     })
+}
+
+/// Above or below normal priority for the calling worker.
+fn set_priority(urgent: bool) {
+    use windows::Win32::System::Threading::*;
+    let priority = if urgent { THREAD_PRIORITY_ABOVE_NORMAL } else { THREAD_PRIORITY_BELOW_NORMAL };
+    // SAFETY: a plain call on our own thread.
+    let _ = unsafe { SetThreadPriority(GetCurrentThread(), priority) };
 }
 
 /// The most pipelines waiting at once since the workers last ran out.
@@ -521,10 +588,12 @@ mod tests {
         assert_eq!(queue.push(&promoted, REQUESTED), Some(false));
         assert_eq!(queue.push(&promoted, REQUESTED), None);
 
-        assert!(Arc::ptr_eq(&queue.pop().unwrap(), &requested));
-        assert!(Arc::ptr_eq(&queue.pop().unwrap(), &promoted));
+        let (first, tier) = queue.pop().unwrap();
+        assert!(Arc::ptr_eq(&first, &requested));
+        assert_eq!(tier, REQUESTED);
+        assert!(Arc::ptr_eq(&queue.pop().unwrap().0, &promoted));
         assert_eq!(queue.push(&promoted, REQUESTED), None);
-        assert!(Arc::ptr_eq(&queue.pop().unwrap(), &earlier));
+        assert!(Arc::ptr_eq(&queue.pop().unwrap().0, &earlier));
         assert!(queue.pop().is_none());
     }
 
@@ -540,9 +609,9 @@ mod tests {
         assert_eq!(queue.push(&known, EARLY), Some(true));
         assert_eq!(queue.push(&promoted, REQUESTED), Some(false));
 
-        assert!(Arc::ptr_eq(&queue.pop().unwrap(), &promoted));
-        assert!(Arc::ptr_eq(&queue.pop().unwrap(), &known));
-        assert!(Arc::ptr_eq(&queue.pop().unwrap(), &guess));
+        assert!(Arc::ptr_eq(&queue.pop().unwrap().0, &promoted));
+        assert!(Arc::ptr_eq(&queue.pop().unwrap().0, &known));
+        assert!(Arc::ptr_eq(&queue.pop().unwrap().0, &guess));
         assert!(queue.pop().is_none());
     }
 }

@@ -133,6 +133,81 @@ cached, #1845 dword 1/5 and masks, #1890 `split.rs` behind
   request is read into a buffer and copied by the CPU, through the GPU
   guard's fault handler. Logged as "a read landed through a buffer".
 
+- Verified (run cin2, 8 min): 10 refused reads landed through the buffer,
+  no crash. Committed (6 commits) and merged `nvidia-fixes`: 712 passed.
+
+## Pass 5: where the time goes (25-min warm-up run)
+
+- Host: CPU 100 %, GPU 14 % (RTX 3090 at 169 W, 12.6 of 24 GB): the
+  title is CPU-bound in the emulator, not GPU-bound. A session's offline
+  `translate --jobs 6` took ~9 cores; set to idle priority, both sessions
+  asked to run low-priority with 2 jobs.
+- Prologue now 1.7-2.0 fps (from ~1), 9,500 pipelines queued (from 25,000):
+  the pipeline library fills from run to run (68,000 loaded, 2,700 early).
+- **2,718 pipelines took >= 1 s, 8,630 s of worker time** (p50 2.3 s,
+  p90 6.0 s, max 48 s): nearly all of the workers' time.
+  - mesh+pixel: 1,978, 6,630 s, avg 3.4 s; our translation ~450 s of it:
+    the NVIDIA driver compiling mesh pipelines is the main cost.
+  - compute: 633, 1,771 s; our translation 1,663 s of it: the translator.
+  Sent to session `slow-compiles`.
+- Draws whose pipeline is not ready are dropped (~400 per frame): this is
+  the "world loading behind, things overlapping" in the cinematic.
+- Per-frame preparing 150-420 ms, of it copies of title memory 150-320 ms
+  for 100-250 MB (~0.7 GB/s) and ~2,800 mapping changes per frame
+  (126 ms). Direct copy is already on.
+- The shader cache is keyed by our executable's hash: every rebuild
+  retranslates everything once. A/B runs therefore share one binary.
+- A/B chain (detached, `vshot/chain.sh`, results in `vshot/ab.txt`):
+  base, VICTORY_INDIRECT_WINDOW=1, VICTORY_LATE_WAIT=1,
+  VICTORY_WIDE_MERGE=1, VICTORY_JOIN_COPIES=1.
+
+## Pass 6: white and blocky screens
+
+- User's screenshots (prologue): over-exposed white frames, large blurred
+  rectangles, stale tiles. Matches dropped compute passes (exposure,
+  bloom, tiled lighting, post), not missing textures: the "3,012 title
+  textures have no host copy yet" are textures not used yet (made on
+  first use).
+- Two causes of dropped dispatches:
+  1. 43 compute pipelines the host refuses (`CreateComputePipelineState`
+     E_INVALIDARG), dropped every frame. List in
+     `docs/overnight/refused-compute-pipelines.txt`; given to session
+     `shader-gaps` to reproduce offline with the debug layer and fix.
+  2. Compute pipelines still being made after the shared 500 ms budget.
+- Change (`pipeline/make.rs`): a dispatch whose pipeline is not ready waits
+  on a budget of its own per frame (3 s, `VICTORY_COMPUTE_WAIT_MS`, 0 = off)
+  after the shared one. A dropped dispatch spoils the whole frame, a dropped
+  draw one object. To be measured (chain2: prime, cw0, cw3 with captures).
+
+## Pass 7: starved pipeline workers
+
+- Session `slow-compiles`: the slowest mesh+pixel pairs compile ~10x faster
+  offline than in game (4408698e+224c743d: 4.2-5.1 s vs 48.2 s), on the same
+  translation path; the driver does not serialise, memory is not it. The
+  in-game time is waiting for the CPU: 8 workers at below-normal priority
+  under a saturated CPU.
+- Changes (`pipeline/make.rs`): a worker making a pipeline a draw or
+  dispatch waits for now runs above normal priority, the rest (early,
+  speculative) below normal as before; "slow host pipeline" also logs the
+  thread's CPU time (`cpu`), so waiting shows as `cpu` far below `ms`.
+- A/B so far (420 s runs, means over world frames):
+  - base: 1.28 fps, prep 241 ms, copies 121, GPU 129, dropped 706/frame
+  - VICTORY_INDIRECT_WINDOW=1: 1.60 fps (+25 %), prep 218, GPU 99
+  - VICTORY_LATE_WAIT=1: 2.05 fps (+60 %), prep 190, GPU 62, copying back
+    44; later in its world 2.6-3.4 fps. CPU and GPU now overlap.
+  - VICTORY_WIDE_MERGE=1: not comparable. The run spent ~5 min on a loading
+    screen (captures: artwork at frames 4096 and 8192) because the first
+    world-frame capture switch saved nearly every frame (685 files) and
+    slowed it. That switch is off again. Its frame 10095 shows the white
+    over-exposure in the cinematic ("DU CASH, MAINTENANT").
+- Winners INDIRECT_WINDOW and LATE_WAIT set as defaults for the next runs
+  (`vshot/defaults.env`), to be confirmed on captured frames before making
+  them the code's defaults. A/B lines now also give the loading time
+  (start to first frame of 100+ draws; run late: 98 s).
+- Window captures (PrintWindow) return stale frames for the title's
+  flip-model window; runs now save the presented frames themselves
+  (`VICTORY_CAPTURE`, frames 4000-7000 every 150, and the first world frame).
+
 ## Next
 
 1. Press A automatically (diagnostics build, `VICTORY_KEYS`) to get past the
@@ -142,3 +217,29 @@ cached, #1845 dword 1/5 and masks, #1890 `split.rs` behind
 3. 43-51 shaders that do not translate (SGPR address not a root parameter,
    whole-wave sections, lane masks, 16-bit wave sums).
 4. 29 kinds of pipeline creation method not implemented (slots 0x218, 0x1c8).
+
+## Pass 8: state when the usage limit was reached
+
+- Run join (VICTORY_JOIN_COPIES=1) never reached the world in 420 s, and
+  widemerge loaded for ~5 min: both had `VICTORY_CAPTURE` on, which saved
+  nearly every frame (806 files) and stalled loading. Capture is off again;
+  WIDE_MERGE and JOIN_COPIES remain unmeasured.
+- Committed: compute dispatches wait on their own 3 s budget
+  (`VICTORY_COMPUTE_WAIT_MS`), workers making a pipeline a draw waits for run
+  above normal priority, slow pipelines log thread CPU time. Pipeline module
+  tests pass (21); full suite not rerun after these.
+- Running unattended: chain2 (`vshot/chain2.sh`) rebuilds the diagnostics
+  binary and runs prime2, cw0, cw3 with INDIRECT_WINDOW=1 and LATE_WAIT=1;
+  results append to `vshot/ab.txt`.
+- Sessions still working on their branches (not merged): `shader-gaps`
+  (untranslatable shaders, 43 refused compute pipelines),
+  `slow-compiles` (mesh DXIL size, translator speed).
+
+## Left to do
+
+1. Read `ab.txt` (prime2, cw0, cw3); confirm INDIRECT_WINDOW and LATE_WAIT
+   on in-game frames, then make them defaults in code.
+2. Run the full test suite; merge the two session branches when done.
+3. White over-exposure in the cinematic: likely the refused compute
+   pipelines (exposure); check after shader-gaps lands.
+4. Go past the prologue: script movement (W held, look, run) and long runs.
